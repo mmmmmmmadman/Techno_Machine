@@ -97,6 +97,30 @@ TechnoMachine/
 
 ### 1. 節奏生成系統
 
+#### 1.0 多風格節奏系統（來自 UniversalRhythm）
+
+**已實現功能：**
+- 4 Role × 2 Voice = 8 聲道架構
+- Variation 影響 density、freq/decay
+- Ghost Notes（低 velocity 裝飾音）
+- Fill 過門系統（每 N bars 自動觸發）
+- Interlock 生成（secondary voice 與 primary 互補）
+
+**風格清單（10 種）：**
+
+| 風格 | 適合度 | Techno 化方案 |
+|------|--------|---------------|
+| Techno | 已實現 | 基礎 |
+| Electronic | 高 | 結構相同，調整 hi-hat 密度 |
+| Breakbeat | 中高 | syncopated kick 變化 |
+| West African | 中 | 採用 swing/hemiola |
+| Afro-Cuban | 低 | 只用 tumbao 節奏，不用 Clave |
+| Brazilian | 低 | 採用 Tamborim 細碎節奏 |
+| Jazz | Techno化 | 保留 ride 節奏型態，straight timing |
+| Balkan | Techno化 | 不對稱重音群組映射到 16 步 |
+| Indian | Techno化 | Sam/Khali 強空對比 |
+| Gamelan | Techno化 | Kotekan 互鎖 + 提高密度 |
+
 #### 1.1 歐幾里得序列器
 ```cpp
 struct EuclideanPattern {
@@ -127,6 +151,36 @@ enum class TrigCondition {
 - 溫度參數控制隨機性
 
 ### 2. 段落與過門系統
+
+#### 2.0 DJ Set 過渡系統（長時間演出用）
+
+**層級結構：**
+```
+Set（整場演出）
+  └── Song（單首歌）
+        ├── Style（節奏風格）
+        ├── SoundPalette（音色組合）
+        └── Sections（段落：Intro/Build/Drop/Breakdown）
+```
+
+**過渡機制：**
+
+| 過渡類型 | 說明 | 持續時間 |
+|----------|------|----------|
+| Style Morph | 節奏權重漸進混合（A→B） | 4-16 bars |
+| Sound Crossfade | 音色參數漸變（freq/decay） | 2-8 bars |
+| Energy Curve | 密度和強度的整體控制 | 持續 |
+| Filter Sweep | 經典 DJ 過渡手法 | 2-4 bars |
+
+**自動換歌觸發條件：**
+- 固定時間（每 N 分鐘）
+- 能量週期（Drop 後 N bars）
+- 手動觸發（系統處理過渡）
+
+**需實作模組：**
+- SongManager - 管理歌曲序列和切換
+- TransitionEngine - 處理過渡邏輯
+- StyleMorpher - 兩種風格間的權重混合
 
 #### 2.1 段落類型
 ```cpp

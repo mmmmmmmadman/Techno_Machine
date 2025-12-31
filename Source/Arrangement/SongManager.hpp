@@ -1,0 +1,190 @@
+/**
+ * SongManager.hpp
+ * Techno Machine - 歌曲序列管理
+ *
+ * 管理 DJ Set 中的歌曲序列和切換邏輯
+ */
+
+#pragma once
+
+#include "../Sequencer/StyleProfiles.hpp"
+#include "StyleMorpher.hpp"
+#include <vector>
+#include <random>
+
+namespace TechnoMachine {
+
+/**
+ * 單首歌曲定義
+ */
+struct Song {
+    int styleIdx;           // 風格索引
+    float variation;        // Variation 值 (0.0 - 1.0)
+    int durationBars;       // 持續小節數
+    float energy;           // 能量等級 (0.0 - 1.0)
+
+    Song(int style = 0, float var = 0.5f, int bars = 64, float e = 0.5f)
+        : styleIdx(style), variation(var), durationBars(bars), energy(e) {}
+};
+
+/**
+ * 換歌觸發模式
+ */
+enum class TransitionTrigger {
+    FIXED_BARS,     // 固定小節數後換歌
+    MANUAL,         // 手動觸發
+    AUTO_ENERGY     // 根據能量曲線自動換歌
+};
+
+/**
+ * 歌曲序列管理器
+ */
+class SongManager {
+public:
+    SongManager() : rng_(std::random_device{}()) {
+        // 預設產生一個隨機 set
+        generateRandomSet(8);
+    }
+
+    /**
+     * 產生隨機 Set
+     */
+    void generateRandomSet(int numSongs) {
+        songs_.clear();
+
+        std::uniform_int_distribution<int> styleDist(0, NUM_STYLES - 1);
+        std::uniform_real_distribution<float> varDist(0.2f, 0.8f);
+        std::uniform_int_distribution<int> barsDist(32, 128);
+        std::uniform_real_distribution<float> energyDist(0.3f, 0.9f);
+
+        for (int i = 0; i < numSongs; i++) {
+            songs_.emplace_back(
+                styleDist(rng_),
+                varDist(rng_),
+                barsDist(rng_),
+                energyDist(rng_)
+            );
+        }
+
+        currentSongIdx_ = 0;
+        barsInCurrentSong_ = 0;
+    }
+
+    /**
+     * 新增歌曲到 Set
+     */
+    void addSong(const Song& song) {
+        songs_.push_back(song);
+    }
+
+    void addSong(int style, float variation, int bars, float energy) {
+        songs_.emplace_back(style, variation, bars, energy);
+    }
+
+    /**
+     * 清除 Set
+     */
+    void clear() {
+        songs_.clear();
+        currentSongIdx_ = 0;
+        barsInCurrentSong_ = 0;
+    }
+
+    /**
+     * 取得當前歌曲
+     */
+    const Song& getCurrentSong() const {
+        if (songs_.empty()) {
+            static Song defaultSong;
+            return defaultSong;
+        }
+        return songs_[currentSongIdx_ % songs_.size()];
+    }
+
+    /**
+     * 取得下一首歌曲
+     */
+    const Song& getNextSong() const {
+        if (songs_.empty()) {
+            static Song defaultSong;
+            return defaultSong;
+        }
+        size_t nextIdx = (currentSongIdx_ + 1) % songs_.size();
+        return songs_[nextIdx];
+    }
+
+    /**
+     * 通知小節開始
+     * @return true 如果需要開始換歌過渡
+     */
+    bool notifyBarStart() {
+        barsInCurrentSong_++;
+
+        if (triggerMode_ == TransitionTrigger::FIXED_BARS) {
+            const Song& current = getCurrentSong();
+
+            // 提前開始過渡（在歌曲結束前 N bars）
+            int transitionStart = current.durationBars - transitionDurationBars_;
+
+            if (barsInCurrentSong_ == transitionStart) {
+                return true;  // 需要開始過渡
+            }
+
+            if (barsInCurrentSong_ >= current.durationBars) {
+                // 切換到下一首
+                advanceToNextSong();
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 手動觸發換歌
+     */
+    void triggerNextSong() {
+        if (triggerMode_ == TransitionTrigger::MANUAL) {
+            // 直接開始過渡
+            advanceToNextSong();
+        }
+    }
+
+    /**
+     * 前進到下一首歌
+     */
+    void advanceToNextSong() {
+        if (!songs_.empty()) {
+            currentSongIdx_ = (currentSongIdx_ + 1) % songs_.size();
+            barsInCurrentSong_ = 0;
+        }
+    }
+
+    // 設定和狀態
+    void setTriggerMode(TransitionTrigger mode) { triggerMode_ = mode; }
+    TransitionTrigger getTriggerMode() const { return triggerMode_; }
+
+    void setTransitionDuration(int bars) { transitionDurationBars_ = std::max(1, bars); }
+    int getTransitionDuration() const { return transitionDurationBars_; }
+
+    int getCurrentSongIdx() const { return currentSongIdx_; }
+    int getBarsInCurrentSong() const { return barsInCurrentSong_; }
+    int getSongCount() const { return static_cast<int>(songs_.size()); }
+
+    float getProgress() const {
+        if (songs_.empty()) return 0.0f;
+        const Song& current = getCurrentSong();
+        return static_cast<float>(barsInCurrentSong_) / static_cast<float>(current.durationBars);
+    }
+
+private:
+    std::vector<Song> songs_;
+    int currentSongIdx_ = 0;
+    int barsInCurrentSong_ = 0;
+
+    TransitionTrigger triggerMode_ = TransitionTrigger::FIXED_BARS;
+    int transitionDurationBars_ = 8;  // 過渡持續小節數
+
+    std::mt19937 rng_;
+};
+
+} // namespace TechnoMachine

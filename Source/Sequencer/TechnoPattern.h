@@ -7,6 +7,7 @@
  * - Primary voice: 主要節奏
  * - Secondary voice: 使用 Interlock 生成的補充節奏
  * - Variation 影響 density 和隨機性
+ * - 支援 10 種風格切換
  */
 
 #pragma once
@@ -15,7 +16,7 @@
 #include <random>
 #include <algorithm>
 #include <cmath>
-#include "../Synthesis/MinimalDrumSynth.h"
+#include "StyleProfiles.hpp"
 
 namespace TechnoMachine {
 
@@ -56,48 +57,41 @@ struct Pattern {
 };
 
 /**
- * Techno 風格權重（來自 UniversalRhythm StyleProfiles.hpp）
+ * 風格權重存取器
+ * 從 StyleProfile 動態取得權重
  */
-namespace TechnoWeights {
-    // Timeline: Hi-hat dense but with gaps
-    inline constexpr float timeline[16] = {
-        1.0f, 0.8f, 1.0f, 0.0f, 1.0f, 0.8f, 1.0f, 0.0f,
-        1.0f, 0.8f, 1.0f, 0.0f, 1.0f, 0.8f, 1.0f, 0.0f
-    };
+class StyleWeights {
+public:
+    static void setStyle(const StyleProfile* style) {
+        currentStyle_ = style;
+    }
 
-    // Foundation: Four-on-floor kick
-    inline constexpr float foundation[16] = {
-        1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f
-    };
+    static const StyleProfile* getStyle() {
+        return currentStyle_ ? currentStyle_ : &STYLE_TECHNO;
+    }
 
-    // Groove: Clap on 2 and 4, with possible syncopation
-    inline constexpr float groove[16] = {
-        0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f
-    };
-
-    // Lead: Sparse industrial perc
-    inline constexpr float lead[16] = {
-        0.0f, 0.8f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.9f,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.7f
-    };
-
-    // 取得 Role 對應的權重陣列
-    inline const float* getWeights(Role role) {
+    static const float* getWeights(Role role) {
+        const StyleProfile* s = getStyle();
         switch (role) {
-            case TIMELINE: return timeline;
-            case FOUNDATION: return foundation;
-            case GROOVE: return groove;
-            case LEAD: return lead;
-            default: return timeline;
+            case TIMELINE: return s->timeline;
+            case FOUNDATION: return s->foundation;
+            case GROOVE: return s->groove;
+            case LEAD: return s->lead;
+            default: return s->timeline;
         }
     }
 
-    // Primary density 範圍
-    inline constexpr float densityMin[NUM_ROLES] = { 0.50f, 0.25f, 0.12f, 0.15f };
-    inline constexpr float densityMax[NUM_ROLES] = { 0.90f, 0.35f, 0.25f, 0.35f };
-}
+    static float getDensityMin(Role role) {
+        return getStyle()->densityRange[role][0];
+    }
+
+    static float getDensityMax(Role role) {
+        return getStyle()->densityRange[role][1];
+    }
+
+private:
+    static inline const StyleProfile* currentStyle_ = &STYLE_TECHNO;
+};
 
 /**
  * 8 聲道 Pattern 組合（4 Role × 2 Voice）
@@ -137,11 +131,12 @@ public:
     MultiVoicePatterns generate(int length = 16, float variation = 0.5f) {
         MultiVoicePatterns result(length);
 
-        // 計算各 Role 的 density
+        // 計算各 Role 的 density（從當前風格取得範圍）
         float densities[NUM_ROLES];
         for (int r = 0; r < NUM_ROLES; r++) {
-            densities[r] = TechnoWeights::densityMin[r] +
-                          variation * (TechnoWeights::densityMax[r] - TechnoWeights::densityMin[r]);
+            float dMin = StyleWeights::getDensityMin(static_cast<Role>(r));
+            float dMax = StyleWeights::getDensityMax(static_cast<Role>(r));
+            densities[r] = dMin + variation * (dMax - dMin);
         }
 
         // 1. Timeline (Voice 0: Primary, Voice 1: Secondary)
@@ -178,7 +173,7 @@ private:
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
         std::uniform_real_distribution<float> velVar(-0.1f, 0.1f);
 
-        const float* styleWeights = TechnoWeights::getWeights(role);
+        const float* styleWeights = StyleWeights::getWeights(role);
 
         // 建立權重陣列
         std::vector<float> weights(static_cast<size_t>(length));
@@ -216,7 +211,7 @@ private:
 
         // 高 variation 時加入 off-beat
         if (variation > 0.3f) {
-            const float* styleWeights = TechnoWeights::foundation;
+            const float* styleWeights = StyleWeights::getWeights(FOUNDATION);
             for (int i = 0; i < length; i++) {
                 if (p.hasOnset(i)) continue;
                 int mapped = (i * 16) / length;
@@ -272,7 +267,7 @@ private:
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
         std::uniform_real_distribution<float> velVar(-0.1f, 0.1f);
 
-        const float* styleWeights = TechnoWeights::getWeights(role);
+        const float* styleWeights = StyleWeights::getWeights(role);
 
         // 建立權重陣列
         std::vector<float> weights(static_cast<size_t>(length));
@@ -373,6 +368,21 @@ class TechnoPatternEngine {
 public:
     TechnoPatternEngine() : rng_(std::random_device{}()) {}
 
+    // 風格切換
+    void setStyle(int styleIdx) {
+        if (styleIdx >= 0 && styleIdx < NUM_STYLES) {
+            currentStyleIdx_ = styleIdx;
+            StyleWeights::setStyle(STYLES[styleIdx]);
+        }
+    }
+
+    void setStyle(StyleType style) {
+        setStyle(static_cast<int>(style));
+    }
+
+    int getStyleIdx() const { return currentStyleIdx_; }
+    const char* getStyleName() const { return TechnoMachine::getStyleName(currentStyleIdx_); }
+
     void regenerate(int length = 16, float variation = 0.5f) {
         patterns_ = generator_.generate(length, variation);
         currentVariation_ = variation;
@@ -435,6 +445,7 @@ private:
     SynthModifiers synthMods_;
     float currentVariation_ = 0.5f;
     int patternLength_ = 16;
+    int currentStyleIdx_ = 0;  // 預設 Techno
 
     // Fill 狀態
     int fillInterval_ = 4;  // 預設每 4 bars
@@ -519,7 +530,7 @@ private:
 
             // 加入額外的 fill 觸發
             int role = v / 2;
-            float baseDensity = TechnoWeights::densityMax[role];
+            float baseDensity = StyleWeights::getDensityMax(static_cast<Role>(role));
             float fillDensity = std::min(0.9f, baseDensity * fillDensityBoost);
 
             int extraOnsets = static_cast<int>((fillDensity - baseDensity) * length);

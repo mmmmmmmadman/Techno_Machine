@@ -26,6 +26,9 @@ void AudioEngine::prepare(double sampleRate, int samplesPerBlock)
     drums_.setLevel(Role::GROOVE, 0.7f);      // Clap
     drums_.setLevel(Role::LEAD, 0.5f);        // Lead perc
 
+    // 初始化 TransitionEngine
+    transitionEngine_.initialize();
+
     // 生成初始 patterns
     regeneratePatterns(0.1f);
 
@@ -71,6 +74,80 @@ bool AudioEngine::isFillActive() const
     return patternEngine_.isFillActive();
 }
 
+// === 風格控制 ===
+
+void AudioEngine::setStyle(int styleIdx)
+{
+    patternEngine_.setStyle(styleIdx);
+    regeneratePatterns(transitionEngine_.getCurrentVariation());
+}
+
+void AudioEngine::setStyle(TechnoMachine::StyleType style)
+{
+    setStyle(static_cast<int>(style));
+}
+
+int AudioEngine::getStyleIdx() const
+{
+    return patternEngine_.getStyleIdx();
+}
+
+const char* AudioEngine::getStyleName() const
+{
+    return patternEngine_.getStyleName();
+}
+
+// === DJ Set 控制 ===
+
+void AudioEngine::generateRandomSet(int numSongs)
+{
+    transitionEngine_.getSongManager().generateRandomSet(numSongs);
+    transitionEngine_.initialize();
+
+    // 套用第一首歌的設定
+    const auto& song = transitionEngine_.getSongManager().getCurrentSong();
+    patternEngine_.setStyle(song.styleIdx);
+    regeneratePatterns(song.variation);
+}
+
+void AudioEngine::triggerNextSong()
+{
+    transitionEngine_.triggerTransition();
+}
+
+void AudioEngine::jumpToSong(int songIdx)
+{
+    transitionEngine_.jumpToSong(songIdx);
+
+    // 套用新歌的設定
+    const auto& song = transitionEngine_.getSongManager().getCurrentSong();
+    patternEngine_.setStyle(song.styleIdx);
+    regeneratePatterns(song.variation);
+}
+
+bool AudioEngine::isTransitioning() const
+{
+    return transitionEngine_.isTransitioning();
+}
+
+float AudioEngine::getTransitionProgress() const
+{
+    return transitionEngine_.getTransitionProgress();
+}
+
+void AudioEngine::applyTransitionParameters()
+{
+    // 過渡期間，使用 TransitionEngine 提供的混合權重
+    if (transitionEngine_.isTransitioning()) {
+        // 更新 pattern engine 使用混合後的權重
+        // 這裡可以根據需要實作更精細的控制
+    }
+
+    // 套用 filter cutoff（用於 HP/LP sweep）
+    // 這裡可以連接到實際的 filter 參數
+    // float cutoff = transitionEngine_.getFilterCutoff();
+}
+
 void AudioEngine::processStep(int step)
 {
     // 使用 getActivePattern 支援 Fill
@@ -87,10 +164,17 @@ void AudioEngine::processStep(int step)
 
 AudioEngine::StereoOutput AudioEngine::process(const Transport& transport)
 {
-    // Check for new bar (Fill 觸發)
+    // Check for new bar (Fill 觸發 + TransitionEngine 更新)
     int currentBar = transport.getCurrentBar();
     if (transport.isBarStart() && currentBar != lastBar_) {
         patternEngine_.notifyBarStart(currentBar);
+        transitionEngine_.notifyBarStart();
+
+        // 如果過渡中，套用混合參數
+        if (transitionEngine_.isTransitioning()) {
+            applyTransitionParameters();
+        }
+
         lastBar_ = currentBar;
     }
 
