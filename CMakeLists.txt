@@ -15,6 +15,12 @@ juce_add_gui_app(TechnoMachine
 
 juce_generate_juce_header(TechnoMachine)
 
+# Embed fonts as binary data - Inter Thin for cross-platform
+juce_add_binary_data(FontData
+    SOURCES
+        Resources/Fonts/Inter-Thin.ttf
+)
+
 target_sources(TechnoMachine
     PRIVATE
         Source/Main.cpp
@@ -34,6 +40,7 @@ target_compile_definitions(TechnoMachine
 
 target_link_libraries(TechnoMachine
     PRIVATE
+        FontData
         juce::juce_audio_basics
         juce::juce_audio_devices
         juce::juce_audio_formats

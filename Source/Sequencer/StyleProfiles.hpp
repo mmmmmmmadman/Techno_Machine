@@ -334,4 +334,51 @@ inline const char* getStyleName(int styleIdx) {
     return STYLES[styleIdx]->name;
 }
 
+// ============================================================
+// Style Dissimilarity Matrix
+// ============================================================
+// 值範圍 0.0-1.0：0.0 = 非常相似，1.0 = 非常不同
+// 基於節奏結構、密度、重音位置分析
+
+inline const float STYLE_DISSIMILARITY[NUM_STYLES][NUM_STYLES] = {
+    //          Tech  Elec  Brkb  WAf   ACub  Braz  Jazz  Balk  Ind   Game
+    /* Tech */ {0.0f, 0.2f, 0.6f, 0.8f, 0.5f, 0.6f, 0.7f, 0.7f, 0.6f, 0.9f},
+    /* Elec */ {0.2f, 0.0f, 0.5f, 0.7f, 0.4f, 0.5f, 0.6f, 0.6f, 0.5f, 0.8f},
+    /* Brkb */ {0.6f, 0.5f, 0.0f, 0.5f, 0.4f, 0.5f, 0.6f, 0.5f, 0.5f, 0.7f},
+    /* WAf  */ {0.8f, 0.7f, 0.5f, 0.0f, 0.4f, 0.5f, 0.6f, 0.5f, 0.4f, 0.6f},
+    /* ACub */ {0.5f, 0.4f, 0.4f, 0.4f, 0.0f, 0.3f, 0.5f, 0.5f, 0.4f, 0.7f},
+    /* Braz */ {0.6f, 0.5f, 0.5f, 0.5f, 0.3f, 0.0f, 0.6f, 0.5f, 0.5f, 0.6f},
+    /* Jazz */ {0.7f, 0.6f, 0.6f, 0.6f, 0.5f, 0.6f, 0.0f, 0.6f, 0.5f, 0.7f},
+    /* Balk */ {0.7f, 0.6f, 0.5f, 0.5f, 0.5f, 0.5f, 0.6f, 0.0f, 0.4f, 0.6f},
+    /* Ind  */ {0.6f, 0.5f, 0.5f, 0.4f, 0.4f, 0.5f, 0.5f, 0.4f, 0.0f, 0.5f},
+    /* Game */ {0.9f, 0.8f, 0.7f, 0.6f, 0.7f, 0.6f, 0.7f, 0.6f, 0.5f, 0.0f}
+};
+
+/**
+ * 取得兩個風格之間的差異度
+ */
+inline float getStyleDissimilarity(int styleA, int styleB) {
+    if (styleA < 0 || styleA >= NUM_STYLES || styleB < 0 || styleB >= NUM_STYLES) {
+        return 0.5f;
+    }
+    return STYLE_DISSIMILARITY[styleA][styleB];
+}
+
+/**
+ * 找出與指定風格差異最大的風格列表
+ * @param currentStyle 當前風格
+ * @param minDissimilarity 最小差異度門檻
+ * @param outStyles 輸出的風格索引陣列
+ * @return 符合條件的風格數量
+ */
+inline int findDissimilarStyles(int currentStyle, float minDissimilarity, int* outStyles) {
+    int count = 0;
+    for (int i = 0; i < NUM_STYLES; i++) {
+        if (i != currentStyle && getStyleDissimilarity(currentStyle, i) >= minDissimilarity) {
+            outStyles[count++] = i;
+        }
+    }
+    return count;
+}
+
 } // namespace TechnoMachine

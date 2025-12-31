@@ -45,38 +45,69 @@ void Transport::reset()
     sixteenthStart_ = false;
 }
 
+void Transport::setSwingLevel(int level)
+{
+    swingLevel_ = std::clamp(level, 0, 3);
+}
+
 void Transport::advance()
 {
     if (!playing_) return;
 
     double samplesPerBeat = clock_.getSamplesPerBeat();
-    double samplesPerSixteenth = samplesPerBeat / 4.0;
+    double samplesPerEighth = samplesPerBeat / 2.0;
 
     double prevPosition = samplePosition_;
     samplePosition_ += 1.0;
 
-    int prevSixteenth = static_cast<int>(prevPosition / samplesPerSixteenth);
-    int newSixteenth = static_cast<int>(samplePosition_ / samplesPerSixteenth);
+    // Calculate swing-adjusted 16th note positions
+    // Swing delays the off-beat 16ths (positions 1 and 3 within each beat)
+    // Each 8th note pair has: on-beat at 0%, off-beat at swingAmount%
+    float swingRatio = swingAmounts_[swingLevel_];
 
-    sixteenthStart_ = (newSixteenth > prevSixteenth);
+    // Position within current 8th note pair (0.0 to 1.0 covers two 16ths)
+    double posInEighth = std::fmod(samplePosition_, samplesPerEighth);
+    double prevPosInEighth = std::fmod(prevPosition, samplesPerEighth);
+
+    // Threshold for the off-beat 16th within each 8th note
+    double swingThreshold = samplesPerEighth * swingRatio;
+
+    // Detect 16th note crossings with swing adjustment
+    int eighthIdx = static_cast<int>(samplePosition_ / samplesPerEighth);
+    int prevEighthIdx = static_cast<int>(prevPosition / samplesPerEighth);
+
+    bool onBeatCrossed = (eighthIdx > prevEighthIdx);
+    bool offBeatCrossed = (posInEighth >= swingThreshold && prevPosInEighth < swingThreshold);
+
+    sixteenthStart_ = onBeatCrossed || offBeatCrossed;
 
     if (sixteenthStart_)
     {
-        currentSixteenth_ = newSixteenth % sixteenthsPerBeat_;
+        // Calculate which 16th we're on (0-15 in a bar)
+        int globalSixteenth;
+        if (onBeatCrossed) {
+            // On-beat 16th (even: 0, 2, 4, 6, 8, 10, 12, 14)
+            globalSixteenth = eighthIdx * 2;
+        } else {
+            // Off-beat 16th (odd: 1, 3, 5, 7, 9, 11, 13, 15)
+            globalSixteenth = eighthIdx * 2 + 1;
+        }
 
-        int prevBeat = prevSixteenth / sixteenthsPerBeat_;
-        int newBeat = newSixteenth / sixteenthsPerBeat_;
+        currentSixteenth_ = globalSixteenth % sixteenthsPerBeat_;
 
-        beatStart_ = (newBeat > prevBeat);
+        int newBeat = globalSixteenth / sixteenthsPerBeat_;
+        int prevBeat = (globalSixteenth - 1) / sixteenthsPerBeat_;
+
+        beatStart_ = (currentSixteenth_ == 0) && onBeatCrossed;
 
         if (beatStart_)
         {
             currentBeat_ = newBeat % beatsPerBar_;
 
-            int prevBar = prevBeat / beatsPerBar_;
             int newBar = newBeat / beatsPerBar_;
+            int prevBar = (newBeat - 1) / beatsPerBar_;
 
-            barStart_ = (newBar > prevBar);
+            barStart_ = (currentBeat_ == 0);
 
             if (barStart_)
             {

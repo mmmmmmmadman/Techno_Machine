@@ -11,20 +11,73 @@
 #include "StyleMorpher.hpp"
 #include <vector>
 #include <random>
+#include <algorithm>
 
 namespace TechnoMachine {
+
+/**
+ * 複合風格 - 每個角色可以有不同的風格
+ */
+struct CompositeStyle {
+    int roleStyles[NUM_ROLES];  // 每個角色的風格索引
+
+    CompositeStyle() {
+        for (int i = 0; i < NUM_ROLES; i++) {
+            roleStyles[i] = 0;  // 預設 Techno
+        }
+    }
+
+    CompositeStyle(int uniformStyle) {
+        for (int i = 0; i < NUM_ROLES; i++) {
+            roleStyles[i] = uniformStyle;
+        }
+    }
+
+    int getStyle(Role role) const {
+        if (role >= 0 && role < NUM_ROLES) {
+            return roleStyles[role];
+        }
+        return 0;
+    }
+
+    void setStyle(Role role, int styleIdx) {
+        if (role >= 0 && role < NUM_ROLES) {
+            roleStyles[role] = std::clamp(styleIdx, 0, NUM_STYLES - 1);
+        }
+    }
+
+    // 取得主要風格（用於顯示）- 取出現最多次的風格
+    int getDominantStyle() const {
+        int counts[NUM_STYLES] = {0};
+        for (int i = 0; i < NUM_ROLES; i++) {
+            counts[roleStyles[i]]++;
+        }
+        int maxIdx = 0;
+        for (int i = 1; i < NUM_STYLES; i++) {
+            if (counts[i] > counts[maxIdx]) maxIdx = i;
+        }
+        return maxIdx;
+    }
+};
 
 /**
  * 單首歌曲定義
  */
 struct Song {
-    int styleIdx;           // 風格索引
-    float variation;        // Variation 值 (0.0 - 1.0)
-    int durationBars;       // 持續小節數
-    float energy;           // 能量等級 (0.0 - 1.0)
+    CompositeStyle compositeStyle;  // 複合風格（per-role）
+    float variation;                // Variation 值 (0.0 - 1.0)
+    int durationBars;               // 持續小節數
+    float energy;                   // 能量等級 (0.0 - 1.0)
+
+    // 保留舊的 styleIdx 介面以便相容
+    int styleIdx;
 
     Song(int style = 0, float var = 0.5f, int bars = 64, float e = 0.5f)
-        : styleIdx(style), variation(var), durationBars(bars), energy(e) {}
+        : compositeStyle(style), variation(var), durationBars(bars), energy(e), styleIdx(style) {}
+
+    Song(const CompositeStyle& cs, float var = 0.5f, int bars = 64, float e = 0.5f)
+        : compositeStyle(cs), variation(var), durationBars(bars), energy(e),
+          styleIdx(cs.getDominantStyle()) {}
 };
 
 /**
@@ -47,7 +100,7 @@ public:
     }
 
     /**
-     * 產生隨機 Set
+     * 產生隨機 Set（使用複合風格）
      * @param numSongs 歌曲數量
      * @param fixedBars 固定小節數（0 表示隨機 32-128）
      */
@@ -58,19 +111,102 @@ public:
         std::uniform_real_distribution<float> varDist(0.2f, 0.8f);
         std::uniform_int_distribution<int> barsDist(32, 128);
         std::uniform_real_distribution<float> energyDist(0.3f, 0.9f);
+        std::uniform_int_distribution<int> roleDist(0, NUM_ROLES - 1);
+        std::uniform_real_distribution<float> probDist(0.0f, 1.0f);
+
+        CompositeStyle prevStyle;
 
         for (int i = 0; i < numSongs; i++) {
             int bars = (fixedBars > 0) ? fixedBars : barsDist(rng_);
+
+            CompositeStyle newStyle;
+
+            if (i == 0) {
+                // 第一首歌：每個角色隨機選擇風格
+                for (int r = 0; r < NUM_ROLES; r++) {
+                    newStyle.roleStyles[r] = styleDist(rng_);
+                }
+            } else {
+                // 後續歌曲：根據連續性邏輯生成
+                newStyle = generateContinuousStyle(prevStyle, styleDist, probDist);
+            }
+
             songs_.emplace_back(
-                styleDist(rng_),
+                newStyle,
                 varDist(rng_),
                 bars,
                 energyDist(rng_)
             );
+
+            prevStyle = newStyle;
         }
 
         currentSongIdx_ = 0;
         barsInCurrentSong_ = 0;
+    }
+
+    /**
+     * 生成與前一首有連續性但明顯變化的複合風格
+     * 規則：
+     * - 保持 1-2 個角色不變（連續性）
+     * - 至少 2 個角色必須有「明顯差異」的風格變化（dissimilarity >= 0.5）
+     */
+    CompositeStyle generateContinuousStyle(
+        const CompositeStyle& prev,
+        std::uniform_int_distribution<int>& styleDist,
+        std::uniform_real_distribution<float>& probDist)
+    {
+        CompositeStyle newStyle;
+        const float MIN_DISSIMILARITY = 0.5f;  // 明顯差異的門檻
+
+        // 決定要保持幾個角色不變（1-2 個）
+        int keepCount = (probDist(rng_) < 0.5f) ? 1 : 2;
+
+        // 隨機選擇要保持的角色
+        std::vector<int> roles = {0, 1, 2, 3};
+        std::shuffle(roles.begin(), roles.end(), rng_);
+
+        int bigChangeCount = 0;  // 追蹤明顯變化的角色數
+
+        for (int i = 0; i < NUM_ROLES; i++) {
+            int role = roles[static_cast<size_t>(i)];
+            int prevStyleIdx = prev.roleStyles[role];
+
+            if (i < keepCount) {
+                // 保持不變
+                newStyle.roleStyles[role] = prevStyleIdx;
+            } else {
+                // 需要變化的角色
+                int newStyleIdx;
+
+                // 如果還沒有達到 2 個明顯變化，強制選擇差異大的風格
+                if (bigChangeCount < 2) {
+                    // 找出差異度 >= 0.5 的風格
+                    int dissimilarStyles[NUM_STYLES];
+                    int dissimilarCount = findDissimilarStyles(prevStyleIdx, MIN_DISSIMILARITY, dissimilarStyles);
+
+                    if (dissimilarCount > 0) {
+                        // 從差異大的風格中隨機選擇
+                        std::uniform_int_distribution<int> dissimilarDist(0, dissimilarCount - 1);
+                        newStyleIdx = dissimilarStyles[dissimilarDist(rng_)];
+                        bigChangeCount++;
+                    } else {
+                        // 找不到差異大的，退回一般隨機
+                        newStyleIdx = styleDist(rng_);
+                        if (getStyleDissimilarity(prevStyleIdx, newStyleIdx) >= MIN_DISSIMILARITY) {
+                            bigChangeCount++;
+                        }
+                    }
+                } else {
+                    // 已達到 2 個明顯變化，可以選擇任意風格
+                    newStyleIdx = styleDist(rng_);
+                }
+
+                newStyle.roleStyles[role] = newStyleIdx;
+            }
+        }
+
+        return newStyle;
     }
 
     /**

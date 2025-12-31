@@ -26,28 +26,25 @@ void AudioEngine::prepare(double sampleRate, int samplesPerBlock)
     drums_.setLevel(Role::GROOVE, 0.7f);      // Clap
     drums_.setLevel(Role::LEAD, 0.5f);        // Lead perc
 
-    // 初始化 TransitionEngine
+    // 初始化 TransitionEngine（保留用於歌曲管理）
     transitionEngine_.initialize();
 
-    // 設定過渡回調
-    TechnoMachine::TransitionCallbacks callbacks;
-    callbacks.onTransitionStart = [this](int fromStyle, int toStyle) {
-        // 過渡開始時：切換風格並啟動 crossfade
-        patternEngine_.setStyle(toStyle);
-        const auto& nextSong = transitionEngine_.getSongManager().getNextSong();
-        int transitionBars = transitionEngine_.getSongManager().getTransitionDuration();
-        patternEngine_.startCrossfade(transitionBars, nextSong.variation);
-    };
-    callbacks.onTransitionComplete = [this]() {
-        // 過渡完成：crossfade 已結束，不需額外動作
-    };
-    callbacks.onSongChange = [this](int songIdx) {
-        // 歌曲切換時的額外處理
-    };
-    transitionEngine_.setCallbacks(callbacks);
+    // 初始化雙 Deck 系統
+    patternEngine_.initializeDecks(16, 0.3f, 0.6f);
 
-    // 生成初始 patterns
-    regeneratePatterns(0.1f);
+    // 載入第一首歌到 Deck A
+    const auto& song = transitionEngine_.getSongManager().getCurrentSong();
+    patternEngine_.loadToDeck(0, song.compositeStyle.roleStyles, song.variation);
+
+    // 載入第二首歌到 Deck B（預備）
+    const auto& nextSong = transitionEngine_.getSongManager().getNextSong();
+    patternEngine_.loadToDeck(1, nextSong.compositeStyle.roleStyles, nextSong.variation);
+
+    // Crossfader 設為 Deck A
+    patternEngine_.setCrossfader(0.0f);
+
+    // 套用初始音色
+    applySynthModifiers();
 
     lastStep_ = -1;
     lastBar_ = -1;
@@ -63,16 +60,12 @@ void AudioEngine::regeneratePatterns(float variation)
 
 void AudioEngine::applySynthModifiers()
 {
-    const auto& mods = patternEngine_.getSynthModifiers();
+    // 使用 crossfader 混合後的音色預設（直接混合風格參數）
+    const auto mixed = patternEngine_.getMixedPresets();
 
-    // 基於預設值套用修改
+    // 直接套用混合後的參數
     for (int v = 0; v < TechnoMachine::NUM_VOICES; v++) {
-        const auto& preset = TechnoMachine::TECHNO_PRESETS[v];
-
-        float modifiedFreq = preset.freq * mods.freqMod[v];
-        float modifiedDecay = preset.decay * mods.decayMod[v];
-
-        drums_.setVoiceParams(v, preset.mode, modifiedFreq, modifiedDecay);
+        drums_.setVoiceParams(v, mixed.mode[v], mixed.freq[v], mixed.decay[v]);
     }
 }
 
@@ -150,9 +143,9 @@ void AudioEngine::generateRandomSet(int numSongs, int barsPerSong)
     transitionEngine_.getSongManager().generateRandomSet(numSongs, barsPerSong);
     transitionEngine_.initialize();
 
-    // 套用第一首歌的設定
+    // 套用第一首歌的複合風格設定
     const auto& song = transitionEngine_.getSongManager().getCurrentSong();
-    patternEngine_.setStyle(song.styleIdx);
+    patternEngine_.setCompositeStyle(song.compositeStyle.roleStyles);
     regeneratePatterns(song.variation);
 }
 
@@ -180,9 +173,9 @@ void AudioEngine::jumpToSong(int songIdx)
 {
     transitionEngine_.jumpToSong(songIdx);
 
-    // 套用新歌的設定
+    // 套用新歌的複合風格設定
     const auto& song = transitionEngine_.getSongManager().getCurrentSong();
-    patternEngine_.setStyle(song.styleIdx);
+    patternEngine_.setCompositeStyle(song.compositeStyle.roleStyles);
     regeneratePatterns(song.variation);
 }
 
@@ -213,9 +206,9 @@ void AudioEngine::processStep(int step)
 {
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
-    // 使用 crossfade 決策（如果在過渡中）
+    // 使用 Deck A/B 混音決策（根據 crossfader 位置）
     for (int v = 0; v < TechnoMachine::NUM_VOICES; v++) {
-        auto decision = patternEngine_.getCrossfadeDecision(v, step);
+        auto decision = patternEngine_.getMixDecision(v, step);
         if (decision.shouldTrigger) {
             // 套用 playback density 過濾
             int role = v / 2;  // 每 2 個 voice 屬於一個 role
@@ -230,6 +223,71 @@ void AudioEngine::processStep(int step)
 
     // 推進 Fill 計數器
     patternEngine_.advanceStep();
+}
+
+// === 手動 Crossfader 控制 ===
+
+void AudioEngine::setCrossfader(float position)
+{
+    patternEngine_.setCrossfader(position);
+
+    // 即時更新音色參數
+    applySynthModifiers();
+}
+
+float AudioEngine::getCrossfader() const
+{
+    return patternEngine_.getCrossfader();
+}
+
+void AudioEngine::loadNextSong()
+{
+    // 推進 SongManager 到下一首
+    transitionEngine_.getSongManager().advanceToNextSong();
+
+    // 取得新歌資訊
+    const auto& nextSong = transitionEngine_.getSongManager().getNextSong();
+
+    // 載入到非作用中的 Deck
+    patternEngine_.loadNextSong(nextSong.compositeStyle.roleStyles, nextSong.variation);
+}
+
+const char* AudioEngine::getDeckAStyleName() const
+{
+    return patternEngine_.getDeckStyleName(0);
+}
+
+const char* AudioEngine::getDeckBStyleName() const
+{
+    return patternEngine_.getDeckStyleName(1);
+}
+
+const char* AudioEngine::getDeckRoleStyleName(int deck, TechnoMachine::Role role) const
+{
+    return patternEngine_.getDeckRoleStyleName(deck, role);
+}
+
+void AudioEngine::loadToDeck(int deck)
+{
+    // 生成隨機複合風格
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_int_distribution<int> styleDist(0, TechnoMachine::NUM_STYLES - 1);
+    std::uniform_real_distribution<float> varDist(0.2f, 0.7f);
+
+    int roleStyles[TechnoMachine::NUM_ROLES];
+    for (int i = 0; i < TechnoMachine::NUM_ROLES; i++) {
+        roleStyles[i] = styleDist(rng);
+    }
+
+    float variation = varDist(rng);
+    patternEngine_.loadToDeck(deck, roleStyles, variation);
+
+    // 如果載入的是當前作用中的 Deck，更新音色
+    if ((deck == 0 && patternEngine_.getCrossfader() < 0.5f) ||
+        (deck == 1 && patternEngine_.getCrossfader() >= 0.5f)) {
+        applySynthModifiers();
+    }
 }
 
 AudioEngine::StereoOutput AudioEngine::process(const Transport& transport)

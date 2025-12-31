@@ -185,6 +185,131 @@ inline const VoicePreset TECHNO_PRESETS[NUM_VOICES] = {
 };
 
 /**
+ * 10 種風格的音色預設
+ * 每種風格有獨特的音色特徵
+ */
+inline const VoicePreset STYLE_PRESETS[10][NUM_VOICES] = {
+    // 0: TECHNO - 經典 909 電子音色
+    {
+        { SynthMode::NOISE, 10000.0f, 20.0f },   // HiHat - 明亮短促
+        { SynthMode::NOISE, 12000.0f, 12.0f },   // HiHat Accent
+        { SynthMode::SINE, 42.0f, 250.0f },      // Kick - 深沉 909
+        { SynthMode::SINE, 55.0f, 180.0f },      // Kick Layer
+        { SynthMode::NOISE, 1800.0f, 55.0f },    // Clap
+        { SynthMode::NOISE, 3000.0f, 35.0f },    // Rim
+        { SynthMode::NOISE, 5000.0f, 80.0f },    // Open HH
+        { SynthMode::SINE, 600.0f, 60.0f }       // Tom
+    },
+    // 1: ELECTRONIC - 更亮更銳利
+    {
+        { SynthMode::NOISE, 14000.0f, 15.0f },   // HiHat - 超高頻
+        { SynthMode::NOISE, 16000.0f, 8.0f },    // HiHat Accent - 極短
+        { SynthMode::SINE, 38.0f, 300.0f },      // Kick - 更低更長
+        { SynthMode::SINE, 48.0f, 220.0f },      // Kick Layer
+        { SynthMode::NOISE, 2200.0f, 40.0f },    // Clap - 更亮
+        { SynthMode::NOISE, 4000.0f, 25.0f },    // Rim - 更高
+        { SynthMode::NOISE, 6000.0f, 100.0f },   // Open HH - 更長
+        { SynthMode::SINE, 800.0f, 45.0f }       // Synth - 更高
+    },
+    // 2: BREAKBEAT - 更有機、斷裂感
+    {
+        { SynthMode::NOISE, 8000.0f, 35.0f },    // HiHat - 較暗較長
+        { SynthMode::NOISE, 9000.0f, 25.0f },    // HiHat Accent
+        { SynthMode::SINE, 55.0f, 180.0f },      // Kick - 較高較短
+        { SynthMode::SINE, 70.0f, 120.0f },      // Kick Layer - punch
+        { SynthMode::NOISE, 1200.0f, 80.0f },    // Snare - 較低較長
+        { SynthMode::NOISE, 2500.0f, 50.0f },    // Rim
+        { SynthMode::NOISE, 4000.0f, 120.0f },   // Open HH - 很長
+        { SynthMode::SINE, 400.0f, 90.0f }       // Tom - 較低
+    },
+    // 3: WEST_AFRICAN - 手鼓、Djembe 風格
+    {
+        { SynthMode::NOISE, 5000.0f, 45.0f },    // Shaker - 沙沙聲
+        { SynthMode::NOISE, 6000.0f, 30.0f },    // Shaker Accent
+        { SynthMode::SINE, 80.0f, 150.0f },      // Djembe Bass - 較高
+        { SynthMode::SINE, 120.0f, 100.0f },     // Djembe Tone
+        { SynthMode::NOISE, 800.0f, 70.0f },     // Djembe Slap - 較低
+        { SynthMode::SINE, 250.0f, 80.0f },      // Bell - 音調
+        { SynthMode::NOISE, 3000.0f, 60.0f },    // Shekere
+        { SynthMode::SINE, 180.0f, 120.0f }      // Talking Drum
+    },
+    // 4: AFRO_CUBAN - Conga、Bongo
+    {
+        { SynthMode::NOISE, 4500.0f, 50.0f },    // Guiro
+        { SynthMode::NOISE, 5500.0f, 35.0f },    // Guiro Accent
+        { SynthMode::SINE, 90.0f, 180.0f },      // Conga Low
+        { SynthMode::SINE, 140.0f, 140.0f },     // Conga High
+        { SynthMode::NOISE, 1000.0f, 60.0f },    // Conga Slap
+        { SynthMode::SINE, 300.0f, 50.0f },      // Bongo
+        { SynthMode::NOISE, 2500.0f, 40.0f },    // Timbale
+        { SynthMode::SINE, 220.0f, 100.0f }      // Cowbell
+    },
+    // 5: BRAZILIAN - Samba 風格
+    {
+        { SynthMode::NOISE, 7000.0f, 25.0f },    // Tamborim - 高頻短促
+        { SynthMode::NOISE, 8000.0f, 18.0f },    // Tamborim Accent
+        { SynthMode::SINE, 65.0f, 200.0f },      // Surdo - 大鼓
+        { SynthMode::SINE, 85.0f, 160.0f },      // Surdo High
+        { SynthMode::NOISE, 1500.0f, 45.0f },    // Caixa - 小鼓
+        { SynthMode::NOISE, 3500.0f, 30.0f },    // Agogo
+        { SynthMode::NOISE, 4500.0f, 55.0f },    // Cuica
+        { SynthMode::SINE, 350.0f, 70.0f }       // Repinique
+    },
+    // 6: JAZZ - Brush、Ride 風格
+    {
+        { SynthMode::NOISE, 6000.0f, 90.0f },    // Ride - 較長
+        { SynthMode::NOISE, 7000.0f, 60.0f },    // Ride Bell
+        { SynthMode::SINE, 50.0f, 350.0f },      // Kick - 軟而長
+        { SynthMode::SINE, 60.0f, 280.0f },      // Kick Ghost
+        { SynthMode::NOISE, 1400.0f, 100.0f },   // Brush - 刷子
+        { SynthMode::NOISE, 2000.0f, 70.0f },    // Cross Stick
+        { SynthMode::NOISE, 5500.0f, 150.0f },   // Crash - 很長
+        { SynthMode::SINE, 500.0f, 80.0f }       // Tom - 較軟
+    },
+    // 7: BALKAN - 不對稱、金屬感
+    {
+        { SynthMode::NOISE, 9000.0f, 30.0f },    // Zurna-like
+        { SynthMode::NOISE, 11000.0f, 20.0f },   // Accent
+        { SynthMode::SINE, 75.0f, 130.0f },      // Tapan Bass - 較短
+        { SynthMode::SINE, 100.0f, 100.0f },     // Tapan High
+        { SynthMode::NOISE, 2000.0f, 40.0f },    // Tapan Rim
+        { SynthMode::SINE, 400.0f, 35.0f },      // Finger Cymbal
+        { SynthMode::NOISE, 3500.0f, 45.0f },    // Darbuka
+        { SynthMode::SINE, 280.0f, 60.0f }       // Def
+    },
+    // 8: INDIAN - Tabla 風格
+    {
+        { SynthMode::NOISE, 5500.0f, 40.0f },    // Jhanjh (Cymbal)
+        { SynthMode::NOISE, 6500.0f, 28.0f },    // Jhanjh Accent
+        { SynthMode::SINE, 60.0f, 280.0f },      // Bayan (Low Tabla)
+        { SynthMode::SINE, 75.0f, 220.0f },      // Bayan Ghost
+        { SynthMode::SINE, 200.0f, 60.0f },      // Dayan (High Tabla) Na
+        { SynthMode::SINE, 350.0f, 45.0f },      // Dayan Tin
+        { SynthMode::NOISE, 2800.0f, 50.0f },    // Dholak
+        { SynthMode::SINE, 150.0f, 90.0f }       // Mridangam
+    },
+    // 9: GAMELAN - 金屬、鐘聲
+    {
+        { SynthMode::SINE, 1200.0f, 200.0f },    // Kenong - 金屬音調
+        { SynthMode::SINE, 1500.0f, 150.0f },    // Kenong High
+        { SynthMode::SINE, 100.0f, 400.0f },     // Gong - 極長
+        { SynthMode::SINE, 130.0f, 350.0f },     // Gong Mid
+        { SynthMode::SINE, 800.0f, 120.0f },     // Saron
+        { SynthMode::SINE, 600.0f, 100.0f },     // Gender
+        { SynthMode::SINE, 2000.0f, 80.0f },     // Bonang
+        { SynthMode::SINE, 450.0f, 180.0f }      // Slenthem
+    }
+};
+
+/**
+ * 取得指定風格的音色預設
+ */
+inline const VoicePreset* getStylePreset(int styleIdx) {
+    if (styleIdx < 0 || styleIdx >= 10) styleIdx = 0;
+    return STYLE_PRESETS[styleIdx];
+}
+
+/**
  * 8 聲道打擊樂合成器（4 Role × 2 Voice）
  */
 class MinimalDrumSynth {

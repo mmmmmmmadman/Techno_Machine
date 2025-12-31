@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include "StyleProfiles.hpp"
+#include "../Synthesis/MinimalDrumSynth.h"
 
 namespace TechnoMachine {
 
@@ -58,20 +59,55 @@ struct Pattern {
 
 /**
  * 風格權重存取器
- * 從 StyleProfile 動態取得權重
+ * 支援 per-role 不同風格（複合風格）
  */
 class StyleWeights {
 public:
+    // 設定統一風格（所有角色使用相同風格）
     static void setStyle(const StyleProfile* style) {
-        currentStyle_ = style;
+        for (int i = 0; i < NUM_ROLES; i++) {
+            roleStyles_[i] = style;
+        }
     }
 
+    // 設定統一風格（by index）
+    static void setStyle(int styleIdx) {
+        if (styleIdx >= 0 && styleIdx < NUM_STYLES) {
+            setStyle(STYLES[styleIdx]);
+        }
+    }
+
+    // 設定 per-role 風格（複合風格）
+    static void setCompositeStyle(const int* roleStyleIndices) {
+        for (int i = 0; i < NUM_ROLES; i++) {
+            int idx = roleStyleIndices[i];
+            if (idx >= 0 && idx < NUM_STYLES) {
+                roleStyles_[i] = STYLES[idx];
+            }
+        }
+    }
+
+    // 設定單一角色的風格
+    static void setRoleStyle(Role role, int styleIdx) {
+        if (role >= 0 && role < NUM_ROLES && styleIdx >= 0 && styleIdx < NUM_STYLES) {
+            roleStyles_[role] = STYLES[styleIdx];
+        }
+    }
+
+    static const StyleProfile* getStyle(Role role) {
+        if (role >= 0 && role < NUM_ROLES && roleStyles_[role]) {
+            return roleStyles_[role];
+        }
+        return &STYLE_TECHNO;
+    }
+
+    // 舊介面相容（回傳第一個角色的風格）
     static const StyleProfile* getStyle() {
-        return currentStyle_ ? currentStyle_ : &STYLE_TECHNO;
+        return roleStyles_[0] ? roleStyles_[0] : &STYLE_TECHNO;
     }
 
     static const float* getWeights(Role role) {
-        const StyleProfile* s = getStyle();
+        const StyleProfile* s = getStyle(role);
         switch (role) {
             case TIMELINE: return s->timeline;
             case FOUNDATION: return s->foundation;
@@ -82,15 +118,17 @@ public:
     }
 
     static float getDensityMin(Role role) {
-        return getStyle()->densityRange[role][0];
+        return getStyle(role)->densityRange[role][0];
     }
 
     static float getDensityMax(Role role) {
-        return getStyle()->densityRange[role][1];
+        return getStyle(role)->densityRange[role][1];
     }
 
 private:
-    static inline const StyleProfile* currentStyle_ = &STYLE_TECHNO;
+    static inline const StyleProfile* roleStyles_[NUM_ROLES] = {
+        &STYLE_TECHNO, &STYLE_TECHNO, &STYLE_TECHNO, &STYLE_TECHNO
+    };
 };
 
 /**
@@ -379,17 +417,30 @@ struct CrossfadeDecision {
 };
 
 /**
+ * 混合後的音色預設（用於 crossfader 混合兩個風格）
+ */
+struct MixedPreset {
+    SynthMode mode[NUM_VOICES];
+    float freq[NUM_VOICES];
+    float decay[NUM_VOICES];
+};
+
+/**
  * Techno Pattern 引擎
  */
 class TechnoPatternEngine {
 public:
     TechnoPatternEngine() : rng_(std::random_device{}()) {}
 
-    // 風格切換
+    // 風格切換（統一風格）- 設定到當前作用中的 Deck
     void setStyle(int styleIdx) {
         if (styleIdx >= 0 && styleIdx < NUM_STYLES) {
             currentStyleIdx_ = styleIdx;
-            StyleWeights::setStyle(STYLES[styleIdx]);
+            Deck& d = (crossfaderPosition_ < 0.5f) ? deckA_ : deckB_;
+            for (int i = 0; i < NUM_ROLES; i++) {
+                d.styleIndices[i] = styleIdx;
+            }
+            StyleWeights::setStyle(styleIdx);
         }
     }
 
@@ -397,8 +448,37 @@ public:
         setStyle(static_cast<int>(style));
     }
 
+    // 設定複合風格到當前作用中的 Deck
+    void setCompositeStyle(const int* roleStyles) {
+        Deck& d = (crossfaderPosition_ < 0.5f) ? deckA_ : deckB_;
+        for (int i = 0; i < NUM_ROLES; i++) {
+            d.styleIndices[i] = roleStyles[i];
+        }
+        StyleWeights::setCompositeStyle(roleStyles);
+        currentStyleIdx_ = d.styleIndices[0];
+    }
+
+    // 設定複合風格到指定 Deck
+    void setDeckCompositeStyle(int deck, const int* roleStyles) {
+        Deck& d = getDeck(deck);
+        for (int i = 0; i < NUM_ROLES; i++) {
+            d.styleIndices[i] = roleStyles[i];
+        }
+    }
+
     int getStyleIdx() const { return currentStyleIdx_; }
-    const char* getStyleName() const { return TechnoMachine::getStyleName(currentStyleIdx_); }
+    int getRoleStyleIdx(Role role) const {
+        if (role >= 0 && role < NUM_ROLES) {
+            const Deck& d = (crossfaderPosition_ < 0.5f) ? deckA_ : deckB_;
+            return d.styleIndices[role];
+        }
+        return 0;
+    }
+
+    // 取得當前作用中 Deck 的風格名稱
+    const char* getStyleName() const {
+        return getDeckStyleName((crossfaderPosition_ < 0.5f) ? 0 : 1);
+    }
 
     // Density 控制
     void setDensity(Role role, float density) {
@@ -414,30 +494,63 @@ public:
         return 0.5f;
     }
 
+    /**
+     * 重新生成 patterns（相容舊介面）
+     * 生成到 Deck A 並設定 crossfader 為 0
+     */
     void regenerate(int length = 16, float variation = 0.5f) {
-        patterns_ = generator_.generate(length, variation, roleDensities_);
-        currentVariation_ = variation;
         patternLength_ = length;
 
-        // 套用 Ghost Notes
-        addGhostNotes(variation);
+        // 使用當前風格設定
+        int styles[NUM_ROLES];
+        for (int i = 0; i < NUM_ROLES; i++) {
+            styles[i] = deckA_.styleIndices[i];
+        }
 
-        // 生成 Synth Modifiers
-        generateSynthModifiers(variation);
+        // 生成到 Deck A
+        loadToDeck(0, styles, variation);
 
-        // 生成 Fill Pattern
-        generateFillPattern(length, variation);
+        // 確保 crossfader 在 A
+        crossfaderPosition_ = 0.0f;
     }
 
-    const MultiVoicePatterns& patterns() const { return patterns_; }
-    MultiVoicePatterns& patterns() { return patterns_; }
+    /**
+     * 初始化兩個 Deck（首次啟動時使用）
+     */
+    void initializeDecks(int length, float variationA, float variationB) {
+        patternLength_ = length;
+
+        // Deck A 使用預設 Techno
+        int defaultStyle[NUM_ROLES] = {0, 0, 0, 0};
+        loadToDeck(0, defaultStyle, variationA);
+
+        // Deck B 也初始化（使用不同 variation）
+        loadToDeck(1, defaultStyle, variationB);
+
+        crossfaderPosition_ = 0.0f;
+    }
+
+    // 相容舊介面：取得當前作用中 deck 的 patterns
+    const MultiVoicePatterns& patterns() const {
+        return (crossfaderPosition_ < 0.5f) ? deckA_.patterns : deckB_.patterns;
+    }
+    MultiVoicePatterns& patterns() {
+        return (crossfaderPosition_ < 0.5f) ? deckA_.patterns : deckB_.patterns;
+    }
 
     const Pattern& getPattern(int voiceIdx) const {
-        return patterns_.getPattern(voiceIdx);
+        return patterns().getPattern(voiceIdx);
     }
 
-    float getVariation() const { return currentVariation_; }
-    const SynthModifiers& getSynthModifiers() const { return synthMods_; }
+    float getVariation() const {
+        return (crossfaderPosition_ < 0.5f) ? deckA_.variation : deckB_.variation;
+    }
+
+    // 取得混合後的 SynthModifiers（用於音色控制）
+    const SynthModifiers& getSynthModifiers() const {
+        // 注意：這是靜態相容介面，實際應使用 getMixedSynthModifiers()
+        return (crossfaderPosition_ < 0.5f) ? deckA_.synthMods : deckB_.synthMods;
+    }
 
     // Fill 系統
     void setFillInterval(int bars) { fillInterval_ = std::max(1, bars); }
@@ -453,11 +566,13 @@ public:
 
     bool isFillActive() const { return fillActive_; }
 
+    // 取得當前作用中的 pattern（考慮 Fill）
     const Pattern& getActivePattern(int voiceIdx) const {
+        const Deck& d = (crossfaderPosition_ < 0.5f) ? deckA_ : deckB_;
         if (fillActive_ && voiceIdx >= 0 && voiceIdx < NUM_VOICES) {
-            return fillPatterns_.getPattern(voiceIdx);
+            return d.fillPatterns.getPattern(voiceIdx);
         }
-        return patterns_.getPattern(voiceIdx);
+        return d.patterns.getPattern(voiceIdx);
     }
 
     void advanceStep() {
@@ -469,193 +584,327 @@ public:
         }
     }
 
-    // === DJ Crossfade 系統 ===
+    // === DJ Deck A/B 手動混音系統 ===
 
     /**
-     * 開始 crossfade 過渡
-     * 儲存當前 patterns 作為 outgoing，生成新 patterns 作為 incoming
+     * 設定 Crossfader 位置（手動控制）
+     * @param position 0.0 = 全 Deck A，1.0 = 全 Deck B
      */
-    void startCrossfade(int durationBars, float newVariation) {
-        // 儲存當前 patterns 作為 outgoing
-        outgoingPatterns_ = patterns_;
-
-        // 生成新 patterns
-        regenerate(patternLength_, newVariation);
-
-        // 設定 crossfade 狀態
-        crossfadeDurationBars_ = std::max(1, durationBars);
-        crossfadeBarCount_ = 0;
-        crossfadeProgress_ = 0.0f;
-        isCrossfading_ = true;
+    void setCrossfader(float position) {
+        crossfaderPosition_ = std::clamp(position, 0.0f, 1.0f);
     }
 
+    float getCrossfader() const { return crossfaderPosition_; }
+
     /**
-     * 通知 crossfade 小節開始
+     * 載入歌曲到指定 Deck
+     * @param deck 0 = Deck A, 1 = Deck B
+     * @param roleStyles 複合風格陣列
+     * @param variation 變化度
      */
-    void notifyCrossfadeBarStart() {
-        if (!isCrossfading_) return;
+    void loadToDeck(int deck, const int* roleStyles, float variation) {
+        Deck& d = getDeck(deck);
 
-        crossfadeBarCount_++;
-        crossfadeProgress_ = static_cast<float>(crossfadeBarCount_) /
-                            static_cast<float>(crossfadeDurationBars_);
-
-        if (crossfadeProgress_ >= 1.0f) {
-            crossfadeProgress_ = 1.0f;
-            isCrossfading_ = false;
+        // 複製風格設定
+        for (int i = 0; i < NUM_ROLES; i++) {
+            d.styleIndices[i] = roleStyles[i];
         }
+
+        // 生成 patterns
+        generateDeckPatterns(d, patternLength_, variation);
     }
 
-    bool isCrossfading() const { return isCrossfading_; }
-    float getCrossfadeProgress() const { return crossfadeProgress_; }
+    /**
+     * 載入下一首歌到非作用中的 Deck
+     * 自動決定目標 Deck（根據 crossfader 位置）
+     */
+    void loadNextSong(const int* roleStyles, float variation) {
+        // 根據 crossfader 決定載入到哪個 deck
+        // crossfader < 0.5 時載入到 B（準備切換過去）
+        // crossfader >= 0.5 時載入到 A（準備切換回來）
+        int targetDeck = (crossfaderPosition_ < 0.5f) ? 1 : 0;
+        loadToDeck(targetDeck, roleStyles, variation);
+    }
 
     /**
-     * 取得 crossfade 觸發決策（機率混合）
-     * 使用 Equal Power 曲線混合 onset 機率
-     *
-     * @param voiceIdx 聲道索引
-     * @param step 當前 step
-     * @return 是否觸發及 velocity
+     * 取得當前作用中 Deck（根據 crossfader 位置）
      */
-    CrossfadeDecision getCrossfadeDecision(int voiceIdx, int step) {
+    int getActiveDeck() const {
+        return (crossfaderPosition_ < 0.5f) ? 0 : 1;
+    }
+
+    /**
+     * 取得指定 Deck 的風格名稱
+     */
+    const char* getDeckStyleName(int deck) const {
+        const Deck& d = getDeck(deck);
+        // 檢查是否為複合風格
+        bool isComposite = false;
+        for (int i = 1; i < NUM_ROLES; i++) {
+            if (d.styleIndices[i] != d.styleIndices[0]) {
+                isComposite = true;
+                break;
+            }
+        }
+        if (isComposite) {
+            return "Mixed";
+        }
+        return TechnoMachine::getStyleName(d.styleIndices[0]);
+    }
+
+    /**
+     * 取得指定 Deck 的特定角色風格名稱
+     */
+    const char* getDeckRoleStyleName(int deck, Role role) const {
+        const Deck& d = getDeck(deck);
+        if (role >= 0 && role < NUM_ROLES) {
+            return TechnoMachine::getStyleName(d.styleIndices[role]);
+        }
+        return "Unknown";
+    }
+
+    /**
+     * 取得指定 Deck 的特定角色風格索引
+     */
+    int getDeckRoleStyleIdx(int deck, Role role) const {
+        const Deck& d = getDeck(deck);
+        if (role >= 0 && role < NUM_ROLES) {
+            return d.styleIndices[role];
+        }
+        return 0;
+    }
+
+    /**
+     * 取得混合後的音色預設
+     * 根據 crossfader 位置平滑混合 Deck A 和 B 的風格預設
+     * 所有角色都使用平滑過渡
+     */
+    MixedPreset getMixedPresets() const {
+        MixedPreset result;
+        float djPos = applyDJCurve(crossfaderPosition_);
+
+        for (int v = 0; v < NUM_VOICES; v++) {
+            int role = v / 2;
+
+            // 取得各 Deck 對應角色的風格預設
+            int styleA = deckA_.styleIndices[role];
+            int styleB = deckB_.styleIndices[role];
+            const VoicePreset& presetA = STYLE_PRESETS[styleA][v];
+            const VoicePreset& presetB = STYLE_PRESETS[styleB][v];
+
+            // 套用 Deck 的 variation 修正
+            float freqA = presetA.freq * deckA_.synthMods.freqMod[v];
+            float decayA = presetA.decay * deckA_.synthMods.decayMod[v];
+            float freqB = presetB.freq * deckB_.synthMods.freqMod[v];
+            float decayB = presetB.decay * deckB_.synthMods.decayMod[v];
+
+            // 所有角色都平滑混合
+            result.mode[v] = (djPos < 0.5f) ? presetA.mode : presetB.mode;
+            result.freq[v] = freqA * (1.0f - djPos) + freqB * djPos;
+            result.decay[v] = decayA * (1.0f - djPos) + decayB * djPos;
+        }
+
+        return result;
+    }
+
+    // 保留舊介面相容性
+    SynthModifiers getMixedSynthModifiers() const {
+        SynthModifiers result;
+        for (int v = 0; v < NUM_VOICES; v++) {
+            result.freqMod[v] = 1.0f;
+            result.decayMod[v] = 1.0f;
+        }
+        return result;
+    }
+
+    /**
+     * 取得混音決策
+     * 根據 crossfader 位置決定播放哪個 pattern 的音符
+     * 所有角色都使用機率混合（DJ 曲線控制）
+     */
+    CrossfadeDecision getMixDecision(int voiceIdx, int step) {
         CrossfadeDecision result = {false, 0.0f};
 
-        if (!isCrossfading_) {
-            // 不在 crossfade 中，使用正常 pattern
-            const Pattern& p = getActivePattern(voiceIdx);
-            if (p.hasOnset(step)) {
-                result.shouldTrigger = true;
-                result.velocity = p.getVelocity(step);
-            }
-            return result;
-        }
+        float djPos = applyDJCurve(crossfaderPosition_);
 
-        // 計算 Equal Power 權重
-        float t = crossfadeProgress_;
-        float outWeight = static_cast<float>(std::cos(t * M_PI * 0.5));  // cos(0) = 1, cos(π/2) = 0
-        float inWeight = static_cast<float>(std::sin(t * M_PI * 0.5));   // sin(0) = 0, sin(π/2) = 1
+        // 選擇 pattern（考慮 Fill）
+        const Pattern& patA = fillActive_ ?
+            deckA_.fillPatterns.getPattern(voiceIdx) :
+            deckA_.patterns.getPattern(voiceIdx);
+        const Pattern& patB = fillActive_ ?
+            deckB_.fillPatterns.getPattern(voiceIdx) :
+            deckB_.patterns.getPattern(voiceIdx);
 
-        // Foundation role（Voice 2, 3）使用 hard swap
-        int role = voiceIdx / 2;
-        if (role == FOUNDATION) {
-            return getFoundationSwapDecision(voiceIdx, step, t);
-        }
+        bool hasA = patA.hasOnset(step);
+        bool hasB = patB.hasOnset(step);
 
-        // 其他 role 使用機率混合
-        const Pattern& outPattern = outgoingPatterns_.getPattern(voiceIdx);
-        const Pattern& inPattern = patterns_.getPattern(voiceIdx);
-
+        // 所有角色：機率混合
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
         float randVal = dist(rng_);
 
-        bool outHas = outPattern.hasOnset(step);
-        bool inHas = inPattern.hasOnset(step);
+        float weightA = 1.0f - djPos;
+        float weightB = djPos;
 
-        if (outHas && inHas) {
-            // 兩個都有 onset：混合 velocity
-            float outVel = outPattern.getVelocity(step) * outWeight;
-            float inVel = inPattern.getVelocity(step) * inWeight;
-            result.shouldTrigger = true;
-            result.velocity = outVel + inVel;
-        }
-        else if (outHas) {
-            // 只有 outgoing 有：機率隨 outWeight 降低
-            if (randVal < outWeight) {
+        if (hasA && hasB) {
+            // 兩邊都有：根據權重選擇其一
+            if (randVal < weightB) {
                 result.shouldTrigger = true;
-                result.velocity = outPattern.getVelocity(step) * outWeight;
+                result.velocity = patB.getVelocity(step);
+            } else {
+                result.shouldTrigger = true;
+                result.velocity = patA.getVelocity(step);
             }
-        }
-        else if (inHas) {
-            // 只有 incoming 有：機率隨 inWeight 提升
-            if (randVal < inWeight) {
+        } else if (hasA) {
+            // 只有 A：機率 = weightA
+            if (randVal < weightA) {
                 result.shouldTrigger = true;
-                result.velocity = inPattern.getVelocity(step) * inWeight;
+                result.velocity = patA.getVelocity(step);
+            }
+        } else if (hasB) {
+            // 只有 B：機率 = weightB
+            if (randVal < weightB) {
+                result.shouldTrigger = true;
+                result.velocity = patB.getVelocity(step);
             }
         }
 
         return result;
+    }
+
+    // 相容舊介面
+    bool isCrossfading() const {
+        return crossfaderPosition_ > 0.01f && crossfaderPosition_ < 0.99f;
+    }
+    float getCrossfadeProgress() const { return crossfaderPosition_; }
+    void notifyCrossfadeBarStart() { /* 手動模式不需要 */ }
+    void startCrossfade(int /*durationBars*/, float newVariation) {
+        // 相容舊介面：載入到另一個 deck
+        int targetDeck = (crossfaderPosition_ < 0.5f) ? 1 : 0;
+        Deck& d = getDeck(targetDeck);
+        generateDeckPatterns(d, patternLength_, newVariation);
+    }
+
+    // 已棄用，改用 getMixDecision
+    CrossfadeDecision getCrossfadeDecision(int voiceIdx, int step) {
+        return getMixDecision(voiceIdx, step);
     }
 
 private:
     PatternGenerator generator_;
-    MultiVoicePatterns patterns_;
-    MultiVoicePatterns fillPatterns_;
-    SynthModifiers synthMods_;
-    float currentVariation_ = 0.5f;
     int patternLength_ = 16;
-    int currentStyleIdx_ = 0;  // 預設 Techno
 
-    // Per-role density（0.0 - 0.9）
-    float roleDensities_[NUM_ROLES] = {0.4f, 0.2f, 0.5f, 0.5f};  // Timeline, Foundation, Groove, Lead
+    // === Deck A/B 雙軌系統 ===
+    struct Deck {
+        MultiVoicePatterns patterns{16};
+        MultiVoicePatterns fillPatterns{16};
+        SynthModifiers synthMods;
+        int styleIndices[NUM_ROLES] = {0, 0, 0, 0};
+        float variation = 0.5f;
+
+        void clear() {
+            for (int i = 0; i < NUM_VOICES; i++) {
+                patterns.patterns[i].clear();
+                fillPatterns.patterns[i].clear();
+            }
+        }
+    };
+
+    Deck deckA_;
+    Deck deckB_;
+    int activeDeck_ = 0;  // 0 = A, 1 = B（用於載入新歌時決定目標）
+
+    // 手動 Crossfader（0.0 = 全 A，1.0 = 全 B）
+    float crossfaderPosition_ = 0.0f;
+
+    // Per-role density（0.0 - 0.9）- 全域設定
+    float roleDensities_[NUM_ROLES] = {0.4f, 0.2f, 0.5f, 0.5f};
 
     // Fill 狀態
-    int fillInterval_ = 4;  // 預設每 4 bars
+    int fillInterval_ = 4;
     bool fillActive_ = false;
     int fillStepsRemaining_ = 0;
 
-    // Crossfade 狀態
-    MultiVoicePatterns outgoingPatterns_;
-    bool isCrossfading_ = false;
-    float crossfadeProgress_ = 0.0f;
-    int crossfadeDurationBars_ = 8;
-    int crossfadeBarCount_ = 0;
+    // 相容舊介面
+    int currentStyleIdx_ = 0;
 
     std::mt19937 rng_;
 
     /**
-     * Foundation（Kick）的 hard swap 決策
-     * 不同時播放兩個 kick pattern，在 50% 進度時瞬間切換
+     * DJ 風格 Crossfader 曲線
+     * 中間凹陷，兩端陡峭 - 模擬真實 DJ 混音台行為
+     *
+     * 特性：
+     * - 在 0.0 和 1.0 附近變化快（快速切入/切出）
+     * - 在 0.5 附近變化慢（方便微調混合比例）
+     *
+     * 使用修改過的 S-curve: 讓中間區域更平坦
      */
-    CrossfadeDecision getFoundationSwapDecision(int voiceIdx, int step, float progress) {
-        CrossfadeDecision result = {false, 0.0f};
+    float applyDJCurve(float t) const {
+        t = std::clamp(t, 0.0f, 1.0f);
 
-        const Pattern& outPattern = outgoingPatterns_.getPattern(voiceIdx);
-        const Pattern& inPattern = patterns_.getPattern(voiceIdx);
-
-        if (progress < 0.5f) {
-            // 前半段：只播放 outgoing
-            if (outPattern.hasOnset(step)) {
-                result.shouldTrigger = true;
-                result.velocity = outPattern.getVelocity(step);
-            }
-        } else {
-            // 後半段：只播放 incoming
-            if (inPattern.hasOnset(step)) {
-                result.shouldTrigger = true;
-                result.velocity = inPattern.getVelocity(step);
-            }
-        }
-
-        return result;
+        // 使用 quintic smoothstep 讓曲線更陡峭
+        // 6t^5 - 15t^4 + 10t^3
+        float t3 = t * t * t;
+        float t4 = t3 * t;
+        float t5 = t4 * t;
+        return 6.0f * t5 - 15.0f * t4 + 10.0f * t3;
     }
 
     /**
-     * 加入 Ghost Notes - 低 velocity 裝飾音
-     * 來自 UniversalRhythm addGhostNotes()
+     * 取得指定 Deck 的參考
      */
-    void addGhostNotes(float variation) {
+    Deck& getDeck(int deck) {
+        return (deck == 0) ? deckA_ : deckB_;
+    }
+
+    const Deck& getDeck(int deck) const {
+        return (deck == 0) ? deckA_ : deckB_;
+    }
+
+    /**
+     * 內部：生成指定 Deck 的 patterns
+     */
+    void generateDeckPatterns(Deck& deck, int length, float variation) {
+        // 設定風格權重
+        StyleWeights::setCompositeStyle(deck.styleIndices);
+
+        // 生成 patterns
+        deck.patterns = generator_.generate(length, variation, roleDensities_);
+        deck.variation = variation;
+
+        // 加入 Ghost Notes
+        addGhostNotesToDeck(deck, variation);
+
+        // 生成 Synth Modifiers
+        generateDeckSynthModifiers(deck, variation);
+
+        // 生成 Fill Pattern
+        generateDeckFillPattern(deck, length, variation);
+    }
+
+    /**
+     * 為指定 Deck 加入 Ghost Notes
+     */
+    void addGhostNotesToDeck(Deck& deck, float variation) {
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
         std::uniform_real_distribution<float> velDist(0.25f, 0.32f);
-
-        // Ghost note 機率隨 variation 增加
         float ghostProb = 0.1f + variation * 0.2f;
 
         for (int v = 0; v < NUM_VOICES; v++) {
-            Pattern& p = patterns_.patterns[v];
-
+            Pattern& p = deck.patterns.patterns[v];
             for (int i = 0; i < p.length; i++) {
-                // 只在沒有 onset 的位置加入
                 if (p.hasOnset(i)) continue;
 
-                // 檢查相鄰是否有 onset（ghost note 通常在主音附近）
                 int prev = (i - 1 + p.length) % p.length;
                 int next = (i + 1) % p.length;
-
                 bool nearHit = p.hasOnset(prev) || p.hasOnset(next);
+                bool isWeakBeat = (i % 2 == 1);
 
-                // 弱拍位置 + 附近有主音 = 較高機率
-                bool weakBeat = (i % 4 != 0);
+                float prob = ghostProb;
+                if (nearHit) prob *= 2.0f;
+                if (isWeakBeat) prob *= 1.5f;
 
-                if (weakBeat && nearHit && dist(rng_) < ghostProb) {
+                if (dist(rng_) < prob) {
                     p.setOnset(i, velDist(rng_));
                 }
             }
@@ -663,70 +912,38 @@ private:
     }
 
     /**
-     * 生成 Synth Modifiers - Variation 影響音色
+     * 為指定 Deck 生成 Synth Modifiers
      */
-    void generateSynthModifiers(float variation) {
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    void generateDeckSynthModifiers(Deck& deck, float variation) {
+        std::uniform_real_distribution<float> freqVar(-0.3f, 0.3f);
+        std::uniform_real_distribution<float> decayVar(-0.2f, 0.2f);
 
         for (int v = 0; v < NUM_VOICES; v++) {
-            // 頻率變化：variation 高時變化幅度大 (0.7 - 1.4)
-            float freqRange = 0.3f * variation;
-            synthMods_.freqMod[v] = 1.0f + (dist(rng_) - 0.5f) * freqRange * 2.0f;
+            float freqBase = 1.0f + (variation - 0.5f) * 0.4f;
+            float decayBase = 1.0f + (variation - 0.5f) * 0.3f;
 
-            // Decay 變化：(0.5 - 1.5)
-            float decayRange = 0.5f * variation;
-            synthMods_.decayMod[v] = 1.0f + (dist(rng_) - 0.5f) * decayRange * 2.0f;
+            deck.synthMods.freqMod[v] = std::clamp(freqBase + freqVar(rng_) * variation, 0.5f, 2.0f);
+            deck.synthMods.decayMod[v] = std::clamp(decayBase + decayVar(rng_) * variation, 0.2f, 2.0f);
         }
     }
 
     /**
-     * 生成 Fill Pattern - 過門時的高密度 pattern
+     * 為指定 Deck 生成 Fill Pattern
      */
-    void generateFillPattern(int length, float variation) {
-        fillPatterns_ = MultiVoicePatterns(length);
+    void generateDeckFillPattern(Deck& deck, int length, float variation) {
+        deck.fillPatterns = generator_.generate(length, variation + 0.2f, roleDensities_);
 
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-        std::uniform_real_distribution<float> velDist(0.6f, 1.0f);
-
-        // Fill 使用更高密度
-        float fillDensityBoost = 1.5f + variation * 0.5f;
-
+        std::uniform_real_distribution<float> velDist(0.7f, 1.0f);
         for (int v = 0; v < NUM_VOICES; v++) {
-            Pattern& fillP = fillPatterns_.patterns[v];
-            const Pattern& normalP = patterns_.patterns[v];
-
-            // 複製原始 pattern
-            for (int i = 0; i < length; i++) {
-                if (normalP.hasOnset(i)) {
-                    fillP.setOnset(i, normalP.getVelocity(i));
-                }
-            }
-
-            // 加入額外的 fill 觸發
-            int role = v / 2;
-            float baseDensity = roleDensities_[role];
-            float fillDensity = std::min(0.9f, baseDensity * fillDensityBoost);
-
-            int extraOnsets = static_cast<int>((fillDensity - baseDensity) * length);
-
-            for (int e = 0; e < extraOnsets; e++) {
-                int pos = static_cast<int>(dist(rng_) * length);
-                if (!fillP.hasOnset(pos)) {
-                    fillP.setOnset(pos, velDist(rng_));
-                }
-            }
-
-            // Snare roll effect for Groove role (voice 4,5)
-            if (role == GROOVE && variation > 0.3f) {
-                // 最後 4 步加入密集觸發
-                for (int i = length - 4; i < length; i++) {
-                    if (dist(rng_) < 0.7f) {
-                        fillP.setOnset(i, 0.7f + dist(rng_) * 0.3f);
-                    }
+            Pattern& fill = deck.fillPatterns.patterns[v];
+            for (int i = 0; i < fill.length; i++) {
+                if (fill.hasOnset(i)) {
+                    fill.setOnset(i, velDist(rng_));
                 }
             }
         }
     }
-};
+
+};  // class TechnoPatternEngine
 
 } // namespace TechnoMachine

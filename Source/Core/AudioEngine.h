@@ -55,6 +55,15 @@ public:
     void setTransitionDuration(int bars);
     int getTransitionDuration() const;
 
+    // === 手動 Crossfader 控制 ===
+    void setCrossfader(float position);  // 0.0 = Deck A, 1.0 = Deck B
+    float getCrossfader() const;
+    void loadNextSong();                 // 載入下一首到非作用中的 Deck
+    void loadToDeck(int deck);           // 載入隨機歌曲到指定 Deck (0=A, 1=B)
+    const char* getDeckAStyleName() const;
+    const char* getDeckBStyleName() const;
+    const char* getDeckRoleStyleName(int deck, TechnoMachine::Role role) const;
+
     // 子系統存取
     TechnoMachine::MinimalDrumSynth& drums() { return drums_; }
     TechnoMachine::TechnoPatternEngine& patternEngine() { return patternEngine_; }

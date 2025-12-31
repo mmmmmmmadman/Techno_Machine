@@ -30,6 +30,10 @@ public:
 
     double getPositionInBar() const;
 
+    // Swing control (0=off, 1=light, 2=medium, 3=heavy)
+    void setSwingLevel(int level);
+    int getSwingLevel() const { return swingLevel_; }
+
 private:
     Clock clock_;
     bool playing_ = false;
@@ -44,6 +48,11 @@ private:
     bool beatStart_ = false;
     bool barStart_ = false;
     bool sixteenthStart_ = false;
+
+    // Swing: delays off-beat 16th notes
+    // Level 0: 50% (straight), 1: 54%, 2: 62%, 3: 67% (triplet)
+    int swingLevel_ = 0;
+    static constexpr float swingAmounts_[4] = {0.50f, 0.54f, 0.62f, 0.67f};
 
     static constexpr int beatsPerBar_ = 4;
     static constexpr int sixteenthsPerBeat_ = 4;

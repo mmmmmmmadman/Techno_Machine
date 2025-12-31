@@ -2,7 +2,17 @@
 
 MainComponent::MainComponent()
 {
-    setSize(1050, 450);
+    // Load embedded Inter Thin font (cross-platform)
+    thinTypeface_ = juce::Typeface::createSystemTypefaceFor(
+        BinaryData::InterThin_ttf,
+        BinaryData::InterThin_ttfSize
+    );
+
+    // Apply thin font to all components
+    thinLookAndFeel_.setTypeface(thinTypeface_);
+    setLookAndFeel(&thinLookAndFeel_);
+
+    setSize(1000, 420);
 
     if (juce::RuntimePermissions::isRequired(juce::RuntimePermissions::recordAudio)
         && !juce::RuntimePermissions::isGranted(juce::RuntimePermissions::recordAudio))
@@ -15,11 +25,33 @@ MainComponent::MainComponent()
         setAudioChannels(0, 2);
     }
 
-    // Play button
+    // Vibrant pink palette - high visibility
+    auto bgDark = juce::Colour(0xff0e0c0c);      // dark warm black
+    auto bgMid = juce::Colour(0xff201a1a);       // dark warm gray
+    auto accent = juce::Colour(0xffff9eb0);      // vibrant pink
+    auto accentDim = juce::Colour(0xffc08090);   // bright muted pink
+    auto textLight = juce::Colour(0xffffffff);   // pure white
+    auto textDim = juce::Colour(0xffc8b8b8);     // bright pink-gray
+
+    // Apply button styling - minimal, flat
+    auto styleButton = [&](juce::TextButton& btn, juce::Colour text) {
+        btn.setColour(juce::TextButton::buttonColourId, bgMid);
+        btn.setColour(juce::TextButton::buttonOnColourId, bgMid.brighter(0.1f));
+        btn.setColour(juce::TextButton::textColourOffId, text);
+        btn.setColour(juce::TextButton::textColourOnId, text.brighter(0.2f));
+    };
+
+    // Play button with flash effect
     playButton_.onClick = [this] {
         transport_.start();
         updateUI();
+        // Flash effect
+        playButton_.setColour(juce::TextButton::buttonColourId, btnFlashColor_);
+        juce::Timer::callAfterDelay(150, [this] {
+            playButton_.setColour(juce::TextButton::buttonColourId, btnBgColor_);
+        });
     };
+    styleButton(playButton_, accent);
     addAndMakeVisible(playButton_);
 
     // Stop button
@@ -28,32 +60,58 @@ MainComponent::MainComponent()
         transport_.reset();
         updateUI();
     };
+    styleButton(stopButton_, textLight);
     addAndMakeVisible(stopButton_);
 
-    // Regenerate button
-    regenerateButton_.onClick = [this] {
-        audioEngine_.regeneratePatterns(static_cast<float>(variationSlider_.getValue()));
+    // Swing button (cycles 0/1/2/3)
+    swingButton_.onClick = [this] {
+        cycleSwing();
     };
-    addAndMakeVisible(regenerateButton_);
+    styleButton(swingButton_, textDim);
+    addAndMakeVisible(swingButton_);
 
-    // Tempo slider
+    // Slider styling helper
+    auto styleSlider = [&](juce::Slider& slider) {
+        slider.setColour(juce::Slider::backgroundColourId, bgMid);
+        slider.setColour(juce::Slider::trackColourId, accentDim);
+        slider.setColour(juce::Slider::thumbColourId, accent);
+        slider.setColour(juce::Slider::textBoxTextColourId, textLight);
+        slider.setColour(juce::Slider::textBoxBackgroundColourId, bgDark);
+        slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    };
+
+    // Label styling helper - embedded thin font
+    auto styleLabel = [this, textDim](juce::Label& label) {
+        label.setColour(juce::Label::textColourId, textDim);
+        label.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
+    };
+
+    // Tempo slider - default 132 BPM
     tempoSlider_.setRange(80.0, 180.0, 0.1);
-    tempoSlider_.setValue(128.0);
-    tempoSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+    tempoSlider_.setValue(132.0);
+    tempoSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 45, 18);
     tempoSlider_.onValueChange = [this] {
         transport_.setTempo(tempoSlider_.getValue());
     };
+    styleSlider(tempoSlider_);
     addAndMakeVisible(tempoSlider_);
+    styleLabel(tempoLabel_);
     tempoLabel_.attachToComponent(&tempoSlider_, true);
     addAndMakeVisible(tempoLabel_);
 
-    // Variation slider
-    variationSlider_.setRange(0.0, 1.0, 0.01);
-    variationSlider_.setValue(0.1);
-    variationSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
-    addAndMakeVisible(variationSlider_);
-    variationLabel_.attachToComponent(&variationSlider_, true);
-    addAndMakeVisible(variationLabel_);
+    // Global Density slider (offsets all 4 densities)
+    globalDensitySlider_.setRange(-0.5, 0.5, 0.01);
+    globalDensitySlider_.setValue(0.0);
+    globalDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 45, 18);
+    globalDensitySlider_.onValueChange = [this] {
+        globalDensityOffset_ = static_cast<float>(globalDensitySlider_.getValue());
+        applyGlobalDensity();
+    };
+    styleSlider(globalDensitySlider_);
+    addAndMakeVisible(globalDensitySlider_);
+    styleLabel(globalDensityLabel_);
+    globalDensityLabel_.attachToComponent(&globalDensitySlider_, true);
+    addAndMakeVisible(globalDensityLabel_);
 
     using Role = TechnoMachine::Role;
 
@@ -61,145 +119,179 @@ MainComponent::MainComponent()
     timelineSlider_.setRange(0.0, 1.0, 0.01);
     timelineSlider_.setValue(0.5);
     timelineSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    timelineSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    timelineSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     timelineSlider_.onValueChange = [this] {
         audioEngine_.drums().setLevel(Role::TIMELINE, static_cast<float>(timelineSlider_.getValue()));
     };
+    styleSlider(timelineSlider_);
     addAndMakeVisible(timelineSlider_);
+    styleLabel(timelineLabel_);
+    timelineLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(timelineLabel_);
 
     // Foundation (Kick) level
     foundationSlider_.setRange(0.0, 1.5, 0.01);
     foundationSlider_.setValue(1.0);
     foundationSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    foundationSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    foundationSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     foundationSlider_.onValueChange = [this] {
         audioEngine_.drums().setLevel(Role::FOUNDATION, static_cast<float>(foundationSlider_.getValue()));
     };
+    styleSlider(foundationSlider_);
     addAndMakeVisible(foundationSlider_);
+    styleLabel(foundationLabel_);
+    foundationLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(foundationLabel_);
 
     // Groove (Clap) level
     grooveSlider_.setRange(0.0, 1.0, 0.01);
     grooveSlider_.setValue(0.7);
     grooveSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    grooveSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    grooveSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     grooveSlider_.onValueChange = [this] {
         audioEngine_.drums().setLevel(Role::GROOVE, static_cast<float>(grooveSlider_.getValue()));
     };
+    styleSlider(grooveSlider_);
     addAndMakeVisible(grooveSlider_);
+    styleLabel(grooveLabel_);
+    grooveLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(grooveLabel_);
 
     // Lead (Rim) level
     leadSlider_.setRange(0.0, 1.0, 0.01);
     leadSlider_.setValue(0.5);
     leadSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    leadSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    leadSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     leadSlider_.onValueChange = [this] {
         audioEngine_.drums().setLevel(Role::LEAD, static_cast<float>(leadSlider_.getValue()));
     };
+    styleSlider(leadSlider_);
     addAndMakeVisible(leadSlider_);
+    styleLabel(leadLabel_);
+    leadLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(leadLabel_);
 
     // === Density sliders ===
-    // (header drawn in paint())
 
-    // Timeline density（即時控制，不重新生成 pattern）
+    // Timeline density - default 50%
     timelineDensitySlider_.setRange(0.0, 1.0, 0.01);
-    timelineDensitySlider_.setValue(1.0);
+    timelineDensitySlider_.setValue(0.5);
+    baseDensities_[0] = 0.5f;
     timelineDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
-    timelineDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    timelineDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     timelineDensitySlider_.onValueChange = [this] {
-        audioEngine_.setPlaybackDensity(Role::TIMELINE, static_cast<float>(timelineDensitySlider_.getValue()));
+        baseDensities_[0] = static_cast<float>(timelineDensitySlider_.getValue());
+        applyGlobalDensity();
     };
+    styleSlider(timelineDensitySlider_);
     addAndMakeVisible(timelineDensitySlider_);
 
-    // Foundation density
+    // Foundation density - default 50%
     foundationDensitySlider_.setRange(0.0, 1.0, 0.01);
-    foundationDensitySlider_.setValue(1.0);
+    foundationDensitySlider_.setValue(0.5);
+    baseDensities_[1] = 0.5f;
     foundationDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
-    foundationDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    foundationDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     foundationDensitySlider_.onValueChange = [this] {
-        audioEngine_.setPlaybackDensity(Role::FOUNDATION, static_cast<float>(foundationDensitySlider_.getValue()));
+        baseDensities_[1] = static_cast<float>(foundationDensitySlider_.getValue());
+        applyGlobalDensity();
     };
+    styleSlider(foundationDensitySlider_);
     addAndMakeVisible(foundationDensitySlider_);
 
-    // Groove density
+    // Groove density - default 50%
     grooveDensitySlider_.setRange(0.0, 1.0, 0.01);
-    grooveDensitySlider_.setValue(1.0);
+    grooveDensitySlider_.setValue(0.5);
+    baseDensities_[2] = 0.5f;
     grooveDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
-    grooveDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    grooveDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     grooveDensitySlider_.onValueChange = [this] {
-        audioEngine_.setPlaybackDensity(Role::GROOVE, static_cast<float>(grooveDensitySlider_.getValue()));
+        baseDensities_[2] = static_cast<float>(grooveDensitySlider_.getValue());
+        applyGlobalDensity();
     };
+    styleSlider(grooveDensitySlider_);
     addAndMakeVisible(grooveDensitySlider_);
 
-    // Lead density
+    // Lead density - default 50%
     leadDensitySlider_.setRange(0.0, 1.0, 0.01);
-    leadDensitySlider_.setValue(1.0);
+    leadDensitySlider_.setValue(0.5);
+    baseDensities_[3] = 0.5f;
     leadDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
-    leadDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    leadDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
     leadDensitySlider_.onValueChange = [this] {
-        audioEngine_.setPlaybackDensity(Role::LEAD, static_cast<float>(leadDensitySlider_.getValue()));
+        baseDensities_[3] = static_cast<float>(leadDensitySlider_.getValue());
+        applyGlobalDensity();
     };
+    styleSlider(leadDensitySlider_);
     addAndMakeVisible(leadDensitySlider_);
 
     // === DJ Set controls ===
 
-    // Generate Set button
-    generateSetButton_.onClick = [this] {
-        audioEngine_.generateRandomSet(8);  // 8 songs in set
+    // Store colors for flash effect
+    btnBgColor_ = bgMid;
+    btnFlashColor_ = accent;
+
+    // Load A button with flash effect
+    loadAButton_.onClick = [this] {
+        audioEngine_.loadToDeck(0);
+        updateDJInfo();
+        // Flash effect
+        loadAButton_.setColour(juce::TextButton::buttonColourId, btnFlashColor_);
+        juce::Timer::callAfterDelay(150, [this] {
+            loadAButton_.setColour(juce::TextButton::buttonColourId, btnBgColor_);
+        });
+    };
+    styleButton(loadAButton_, textDim);
+    addAndMakeVisible(loadAButton_);
+
+    // Load B button with flash effect
+    loadBButton_.onClick = [this] {
+        audioEngine_.loadToDeck(1);
+        updateDJInfo();
+        // Flash effect
+        loadBButton_.setColour(juce::TextButton::buttonColourId, btnFlashColor_);
+        juce::Timer::callAfterDelay(150, [this] {
+            loadBButton_.setColour(juce::TextButton::buttonColourId, btnBgColor_);
+        });
+    };
+    styleButton(loadBButton_, textDim);
+    addAndMakeVisible(loadBButton_);
+
+    // === Crossfader ===
+    crossfaderSlider_.setRange(0.0, 1.0, 0.01);
+    crossfaderSlider_.setValue(0.0);
+    crossfaderSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
+    crossfaderSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    crossfaderSlider_.onValueChange = [this] {
+        audioEngine_.setCrossfader(static_cast<float>(crossfaderSlider_.getValue()));
         updateDJInfo();
     };
-    addAndMakeVisible(generateSetButton_);
+    styleSlider(crossfaderSlider_);
+    addAndMakeVisible(crossfaderSlider_);
 
-    // Next Song button
-    nextSongButton_.onClick = [this] {
-        audioEngine_.triggerNextSong();
-    };
-    addAndMakeVisible(nextSongButton_);
+    crossfaderLabel_.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
+    crossfaderLabel_.setColour(juce::Label::textColourId, textDim);
+    crossfaderLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(crossfaderLabel_);
 
-    // Style label
-    styleLabel_.setFont(juce::FontOptions(18.0f).withStyle("Bold"));
-    styleLabel_.setColour(juce::Label::textColourId, juce::Colour(0xff00ffaa));
-    addAndMakeVisible(styleLabel_);
-
-    // Song info label
-    songInfoLabel_.setFont(juce::FontOptions(12.0f));
-    songInfoLabel_.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    addAndMakeVisible(songInfoLabel_);
-
-    // Transition progress bar
-    transitionProgress_.setColour(juce::ProgressBar::foregroundColourId, juce::Colour(0xff00aaff));
-    addAndMakeVisible(transitionProgress_);
-
-    // Song bars slider
-    songBarsSlider_.setRange(8, 128, 1);
-    songBarsSlider_.setValue(32);
-    songBarsSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
-    songBarsSlider_.onValueChange = [this] {
-        audioEngine_.setSongDuration(static_cast<int>(songBarsSlider_.getValue()));
-    };
-    addAndMakeVisible(songBarsSlider_);
-    addAndMakeVisible(songBarsLabel_);
-
-    // Transition bars slider
-    transitionBarsSlider_.setRange(2, 32, 1);
-    transitionBarsSlider_.setValue(8);
-    transitionBarsSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
-    transitionBarsSlider_.onValueChange = [this] {
-        audioEngine_.setTransitionDuration(static_cast<int>(transitionBarsSlider_.getValue()));
-    };
-    addAndMakeVisible(transitionBarsSlider_);
-    addAndMakeVisible(transitionBarsLabel_);
+    // Role style labels
+    for (int i = 0; i < 4; i++) {
+        roleStyleLabels_[i].setFont(juce::Font(thinTypeface_).withHeight(16.0f));
+        roleStyleLabels_[i].setColour(juce::Label::textColourId, textLight);
+        addAndMakeVisible(roleStyleLabels_[i]);
+    }
 
     // Status label
     statusLabel_.setJustificationType(juce::Justification::centred);
-    statusLabel_.setFont(juce::FontOptions(28.0f));
+    statusLabel_.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
+    statusLabel_.setColour(juce::Label::textColourId, textLight);
     addAndMakeVisible(statusLabel_);
 
-    transport_.setTempo(128.0);
+    transport_.setTempo(132.0);  // Default 132 BPM
+    transport_.setSwingLevel(1);  // Default swing level 1
+    swingButton_.setButtonText("Swing: 1");
     updateDJInfo();
+    applyGlobalDensity();  // Apply initial densities
 
     startTimerHz(30);
     updateUI();
@@ -209,6 +301,7 @@ MainComponent::~MainComponent()
 {
     stopTimer();
     shutdownAudio();
+    setLookAndFeel(nullptr);
 }
 
 void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
@@ -243,47 +336,51 @@ void MainComponent::releaseResources()
 
 void MainComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff1a1a2e));
+    // Dark warm background
+    g.fillAll(juce::Colour(0xff0e0c0c));
 
-    // Title
-    g.setColour(juce::Colours::white);
-    g.setFont(36.0f);
-    g.drawText("Techno Machine", getLocalBounds().removeFromTop(60), juce::Justification::centred);
+    // Title - vibrant pink, 32pt
+    g.setColour(juce::Colour(0xffff9eb0));
+    g.setFont(juce::Font(thinTypeface_).withHeight(32.0f));
+    g.drawText("TECHNO MACHINE", getLocalBounds().removeFromTop(50), juce::Justification::centred);
 
-    // Section headers - positioned at bottom area
-    g.setFont(13.0f);
-    int headerY = getHeight() - 175;
+    // Section header - 16pt, centered above density faders
+    g.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
+    g.setColour(juce::Colour(0xffa09098));
+    int headerY = getHeight() - 185;
 
-    int densityStartX = 20 + (55 + 10) * 4 + 40;
-    g.drawText("DENSITY", densityStartX, headerY, 80, 18, juce::Justification::left);
+    int densityStartX = 20 + (65 + 8) * 4 + 35;
+    int densityWidth = (65 + 8) * 4 - 8;  // 4 faders width
+    g.drawText("DENSITY", densityStartX, headerY, densityWidth, 20, juce::Justification::centred);
 
-    int djX = densityStartX + (55 + 10) * 4 + 40;
-    g.drawText("DJ SET", djX, headerY, 80, 18, juce::Justification::left);
+    // Thin separator line
+    g.setColour(juce::Colour(0xff302828));
+    g.drawLine(20, static_cast<float>(headerY - 5), static_cast<float>(getWidth() - 20), static_cast<float>(headerY - 5), 0.5f);
 }
 
 void MainComponent::resized()
 {
     auto area = getLocalBounds().reduced(20);
-    area.removeFromTop(60);
+    area.removeFromTop(50);
 
-    // Transport controls
-    auto controlArea = area.removeFromTop(40);
-    playButton_.setBounds(controlArea.removeFromLeft(80));
-    controlArea.removeFromLeft(10);
-    stopButton_.setBounds(controlArea.removeFromLeft(80));
-    controlArea.removeFromLeft(10);
-    regenerateButton_.setBounds(controlArea.removeFromLeft(100));
-    controlArea.removeFromLeft(60);
-    tempoSlider_.setBounds(controlArea.removeFromLeft(250));
+    // Transport controls row 1
+    auto controlArea = area.removeFromTop(36);
+    playButton_.setBounds(controlArea.removeFromLeft(70));
+    controlArea.removeFromLeft(8);
+    stopButton_.setBounds(controlArea.removeFromLeft(70));
+    controlArea.removeFromLeft(8);
+    swingButton_.setBounds(controlArea.removeFromLeft(100));
+    controlArea.removeFromLeft(50);
+    tempoSlider_.setBounds(controlArea.removeFromLeft(220));
+
+    area.removeFromTop(10);
+
+    // Global Density slider
+    auto globalArea = area.removeFromTop(30);
+    globalArea.removeFromLeft(60);
+    globalDensitySlider_.setBounds(globalArea.removeFromLeft(220));
 
     area.removeFromTop(15);
-
-    // Variation slider
-    auto variationArea = area.removeFromTop(30);
-    variationArea.removeFromLeft(80);
-    variationSlider_.setBounds(variationArea.removeFromLeft(250));
-
-    area.removeFromTop(20);
 
     // Status
     statusLabel_.setBounds(area.removeFromTop(50));
@@ -294,9 +391,9 @@ void MainComponent::resized()
     auto mixerArea = area.removeFromTop(180);
     mixerArea.removeFromTop(25);
 
-    int faderWidth = 55;
-    int faderSpacing = 10;
-    int sectionSpacing = 40;
+    int faderWidth = 65;
+    int faderSpacing = 8;
+    int sectionSpacing = 35;
 
     // === LEVEL section ===
     auto timelineArea = mixerArea.removeFromLeft(faderWidth);
@@ -334,22 +431,24 @@ void MainComponent::resized()
     leadDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 3, densityY, faderWidth, 130);
 
     // === DJ Set controls (right side) ===
-    int djX = densityStartX + (faderWidth + faderSpacing) * 4 + 40;
+    int djX = densityStartX + (faderWidth + faderSpacing) * 4 + 35;
     int djY = getHeight() - 155;
 
-    generateSetButton_.setBounds(djX, djY, 95, 28);
-    nextSongButton_.setBounds(djX + 100, djY, 95, 28);
+    loadAButton_.setBounds(djX, djY, 85, 26);
+    loadBButton_.setBounds(djX + 90, djY, 85, 26);
 
-    styleLabel_.setBounds(djX, djY + 35, 195, 22);
-    songInfoLabel_.setBounds(djX, djY + 55, 195, 18);
-    transitionProgress_.setBounds(djX, djY + 75, 195, 10);
+    // Crossfader
+    crossfaderLabel_.setBounds(djX, djY + 30, 175, 14);
+    crossfaderSlider_.setBounds(djX, djY + 44, 175, 22);
 
-    // Settings sliders
-    songBarsLabel_.setBounds(djX, djY + 90, 65, 18);
-    songBarsSlider_.setBounds(djX + 65, djY + 90, 130, 18);
-
-    transitionBarsLabel_.setBounds(djX, djY + 110, 65, 18);
-    transitionBarsSlider_.setBounds(djX + 65, djY + 110, 130, 18);
+    // Role style labels (2x2 grid) - larger for bigger font
+    int labelW = 130;
+    int labelH = 24;
+    int labelY = djY + 70;
+    roleStyleLabels_[0].setBounds(djX, labelY, labelW, labelH);           // Timeline
+    roleStyleLabels_[1].setBounds(djX + 135, labelY, labelW, labelH);     // Foundation
+    roleStyleLabels_[2].setBounds(djX, labelY + 26, labelW, labelH);      // Groove
+    roleStyleLabels_[3].setBounds(djX + 135, labelY + 26, labelW, labelH); // Lead
 }
 
 void MainComponent::timerCallback()
@@ -378,29 +477,42 @@ void MainComponent::updateUI()
 
 void MainComponent::updateDJInfo()
 {
-    auto& te = audioEngine_.transitionEngine();
-    auto& sm = te.getSongManager();
+    using Role = TechnoMachine::Role;
 
-    // Style name
-    const char* styleName = audioEngine_.getStyleName();
-    styleLabel_.setText(juce::String("Style: ") + styleName, juce::dontSendNotification);
+    // Crossfader position indicator
+    float pos = audioEngine_.getCrossfader();
+    int percent = static_cast<int>(pos * 100.0f);
+    crossfaderLabel_.setText(juce::String::formatted("A  %d%%  B", percent), juce::dontSendNotification);
 
-    // Song info
-    int songIdx = sm.getCurrentSongIdx() + 1;
-    int totalSongs = sm.getSongCount();
-    int barsInSong = sm.getBarsInCurrentSong();
-    const auto& currentSong = sm.getCurrentSong();
+    // Determine active deck based on crossfader position
+    int activeDeck = (pos < 0.5f) ? 0 : 1;
 
-    juce::String songInfo;
-    if (te.isTransitioning()) {
-        songInfo = juce::String::formatted("Song %d/%d - TRANSITIONING...", songIdx, totalSongs);
-    } else {
-        songInfo = juce::String::formatted("Song %d/%d | Bar %d/%d",
-                                           songIdx, totalSongs, barsInSong, currentSong.durationBars);
+    // Role style labels - show active deck's styles with full names
+    const char* roleNames[] = {"Timeline: ", "Foundation: ", "Groove: ", "Lead: "};
+    const Role roles[] = {Role::TIMELINE, Role::FOUNDATION, Role::GROOVE, Role::LEAD};
+
+    for (int i = 0; i < 4; i++) {
+        const char* styleName = audioEngine_.getDeckRoleStyleName(activeDeck, roles[i]);
+        roleStyleLabels_[i].setText(juce::String(roleNames[i]) + styleName, juce::dontSendNotification);
     }
-    songInfoLabel_.setText(songInfo, juce::dontSendNotification);
+}
 
-    // Transition progress
-    transitionProgressValue_ = static_cast<double>(te.getTransitionProgress());
-    transitionProgress_.setVisible(te.isTransitioning());
+void MainComponent::cycleSwing()
+{
+    swingLevel_ = (swingLevel_ + 1) % 4;
+    transport_.setSwingLevel(swingLevel_);
+
+    const char* labels[] = {"Swing: Off", "Swing: 1", "Swing: 2", "Swing: 3"};
+    swingButton_.setButtonText(labels[swingLevel_]);
+}
+
+void MainComponent::applyGlobalDensity()
+{
+    using Role = TechnoMachine::Role;
+    const Role roles[] = {Role::TIMELINE, Role::FOUNDATION, Role::GROOVE, Role::LEAD};
+
+    for (int i = 0; i < 4; i++) {
+        float finalDensity = std::clamp(baseDensities_[i] + globalDensityOffset_, 0.0f, 1.0f);
+        audioEngine_.setPlaybackDensity(roles[i], finalDensity);
+    }
 }
