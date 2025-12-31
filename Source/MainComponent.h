@@ -48,10 +48,33 @@ private:
     juce::Label grooveLabel_{"", "Clap"};
     juce::Label leadLabel_{"", "Rim"};
 
+    // 4 Role density sliders
+    juce::Slider timelineDensitySlider_;
+    juce::Slider foundationDensitySlider_;
+    juce::Slider grooveDensitySlider_;
+    juce::Slider leadDensitySlider_;
+
+    juce::Label densityHeaderLabel_{"", "DENSITY"};
+
+    // DJ Set controls
+    juce::TextButton generateSetButton_{"Generate Set"};
+    juce::TextButton nextSongButton_{"Next Song"};
+    juce::Label styleLabel_;
+    juce::Label songInfoLabel_;
+    double transitionProgressValue_ = 0.0;
+    juce::ProgressBar transitionProgress_{transitionProgressValue_};
+
+    // DJ Set settings
+    juce::Slider songBarsSlider_;
+    juce::Label songBarsLabel_{"", "Song Bars"};
+    juce::Slider transitionBarsSlider_;
+    juce::Label transitionBarsLabel_{"", "Trans Bars"};
+
     // Status
     juce::Label statusLabel_;
 
     void updateUI();
+    void updateDJInfo();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

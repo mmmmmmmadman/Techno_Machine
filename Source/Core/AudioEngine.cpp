@@ -29,6 +29,23 @@ void AudioEngine::prepare(double sampleRate, int samplesPerBlock)
     // 初始化 TransitionEngine
     transitionEngine_.initialize();
 
+    // 設定過渡回調
+    TechnoMachine::TransitionCallbacks callbacks;
+    callbacks.onTransitionStart = [this](int fromStyle, int toStyle) {
+        // 過渡開始時：切換風格並啟動 crossfade
+        patternEngine_.setStyle(toStyle);
+        const auto& nextSong = transitionEngine_.getSongManager().getNextSong();
+        int transitionBars = transitionEngine_.getSongManager().getTransitionDuration();
+        patternEngine_.startCrossfade(transitionBars, nextSong.variation);
+    };
+    callbacks.onTransitionComplete = [this]() {
+        // 過渡完成：crossfade 已結束，不需額外動作
+    };
+    callbacks.onSongChange = [this](int songIdx) {
+        // 歌曲切換時的額外處理
+    };
+    transitionEngine_.setCallbacks(callbacks);
+
     // 生成初始 patterns
     regeneratePatterns(0.1f);
 
@@ -74,6 +91,35 @@ bool AudioEngine::isFillActive() const
     return patternEngine_.isFillActive();
 }
 
+// === Density 控制 ===
+
+void AudioEngine::setDensity(TechnoMachine::Role role, float density)
+{
+    patternEngine_.setDensity(role, density);
+}
+
+float AudioEngine::getDensity(TechnoMachine::Role role) const
+{
+    return patternEngine_.getDensity(role);
+}
+
+// === Playback Density（即時過濾）===
+
+void AudioEngine::setPlaybackDensity(TechnoMachine::Role role, float density)
+{
+    if (role >= 0 && role < TechnoMachine::NUM_ROLES) {
+        playbackDensity_[role] = std::clamp(density, 0.0f, 1.0f);
+    }
+}
+
+float AudioEngine::getPlaybackDensity(TechnoMachine::Role role) const
+{
+    if (role >= 0 && role < TechnoMachine::NUM_ROLES) {
+        return playbackDensity_[role];
+    }
+    return 1.0f;
+}
+
 // === 風格控制 ===
 
 void AudioEngine::setStyle(int styleIdx)
@@ -99,15 +145,30 @@ const char* AudioEngine::getStyleName() const
 
 // === DJ Set 控制 ===
 
-void AudioEngine::generateRandomSet(int numSongs)
+void AudioEngine::generateRandomSet(int numSongs, int barsPerSong)
 {
-    transitionEngine_.getSongManager().generateRandomSet(numSongs);
+    transitionEngine_.getSongManager().generateRandomSet(numSongs, barsPerSong);
     transitionEngine_.initialize();
 
     // 套用第一首歌的設定
     const auto& song = transitionEngine_.getSongManager().getCurrentSong();
     patternEngine_.setStyle(song.styleIdx);
     regeneratePatterns(song.variation);
+}
+
+void AudioEngine::setSongDuration(int bars)
+{
+    transitionEngine_.getSongManager().setAllSongDuration(bars);
+}
+
+void AudioEngine::setTransitionDuration(int bars)
+{
+    transitionEngine_.getSongManager().setTransitionDuration(bars);
+}
+
+int AudioEngine::getTransitionDuration() const
+{
+    return transitionEngine_.getSongManager().getTransitionDuration();
 }
 
 void AudioEngine::triggerNextSong()
@@ -150,11 +211,20 @@ void AudioEngine::applyTransitionParameters()
 
 void AudioEngine::processStep(int step)
 {
-    // 使用 getActivePattern 支援 Fill
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+    // 使用 crossfade 決策（如果在過渡中）
     for (int v = 0; v < TechnoMachine::NUM_VOICES; v++) {
-        const auto& pattern = patternEngine_.getActivePattern(v);
-        if (pattern.hasOnset(step)) {
-            drums_.triggerVoice(v, pattern.getVelocity(step));
+        auto decision = patternEngine_.getCrossfadeDecision(v, step);
+        if (decision.shouldTrigger) {
+            // 套用 playback density 過濾
+            int role = v / 2;  // 每 2 個 voice 屬於一個 role
+            float density = playbackDensity_[role];
+
+            // density = 1.0 時全部播放，density = 0.0 時全部靜音
+            if (density >= 1.0f || dist(densityRng_) < density) {
+                drums_.triggerVoice(v, decision.velocity);
+            }
         }
     }
 
@@ -170,8 +240,9 @@ AudioEngine::StereoOutput AudioEngine::process(const Transport& transport)
         patternEngine_.notifyBarStart(currentBar);
         transitionEngine_.notifyBarStart();
 
-        // 如果過渡中，套用混合參數
+        // 如果過渡中，推進 crossfade 進度
         if (transitionEngine_.isTransitioning()) {
+            patternEngine_.notifyCrossfadeBarStart();
             applyTransitionParameters();
         }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <random>
 #include "../Synthesis/MinimalDrumSynth.h"
 #include "../Sequencer/TechnoPattern.h"
 #include "../Arrangement/TransitionEngine.hpp"
@@ -28,6 +29,14 @@ public:
     int getFillInterval() const;
     bool isFillActive() const;
 
+    // Density 控制（生成時使用）
+    void setDensity(TechnoMachine::Role role, float density);
+    float getDensity(TechnoMachine::Role role) const;
+
+    // Playback Density（即時過濾，不重新生成）
+    void setPlaybackDensity(TechnoMachine::Role role, float density);
+    float getPlaybackDensity(TechnoMachine::Role role) const;
+
     // 風格控制
     void setStyle(int styleIdx);
     void setStyle(TechnoMachine::StyleType style);
@@ -35,11 +44,16 @@ public:
     const char* getStyleName() const;
 
     // DJ Set 控制
-    void generateRandomSet(int numSongs);
+    void generateRandomSet(int numSongs, int barsPerSong = 0);
     void triggerNextSong();
     void jumpToSong(int songIdx);
     bool isTransitioning() const;
     float getTransitionProgress() const;
+
+    // DJ Set 設定
+    void setSongDuration(int bars);
+    void setTransitionDuration(int bars);
+    int getTransitionDuration() const;
 
     // 子系統存取
     TechnoMachine::MinimalDrumSynth& drums() { return drums_; }
@@ -56,6 +70,12 @@ private:
 
     int lastStep_ = -1;
     int lastBar_ = -1;
+
+    // Playback density per role（1.0 = 全部播放，0.0 = 靜音）
+    float playbackDensity_[TechnoMachine::NUM_ROLES] = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    // 用於 density 過濾的隨機數生成器
+    std::mt19937 densityRng_{std::random_device{}()};
 
     void processStep(int step);
     void applySynthModifiers();

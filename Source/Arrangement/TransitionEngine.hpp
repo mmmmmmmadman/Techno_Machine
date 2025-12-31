@@ -86,10 +86,10 @@ public:
     }
 
     /**
-     * 手動觸發過渡
+     * 手動觸發過渡到下一首歌
      */
     void triggerTransition() {
-        if (state_ == TransitionState::IDLE) {
+        if (state_ == TransitionState::IDLE && songManager_.getSongCount() > 0) {
             startTransition();
         }
     }
@@ -288,6 +288,9 @@ private:
      * 完成過渡
      */
     void completeTransition() {
+        // 前進到下一首歌
+        songManager_.advanceToNextSong();
+
         state_ = TransitionState::IDLE;
         transitionProgress_ = 1.0f;
 

@@ -127,36 +127,45 @@ public:
 
     /**
      * 生成完整的 8 聲道 Pattern
+     * @param densities 可選的 per-role density 陣列，nullptr 時使用 variation 計算
      */
-    MultiVoicePatterns generate(int length = 16, float variation = 0.5f) {
+    MultiVoicePatterns generate(int length = 16, float variation = 0.5f,
+                                const float* densities = nullptr) {
         MultiVoicePatterns result(length);
 
-        // 計算各 Role 的 density（從當前風格取得範圍）
-        float densities[NUM_ROLES];
-        for (int r = 0; r < NUM_ROLES; r++) {
-            float dMin = StyleWeights::getDensityMin(static_cast<Role>(r));
-            float dMax = StyleWeights::getDensityMax(static_cast<Role>(r));
-            densities[r] = dMin + variation * (dMax - dMin);
+        // 計算各 Role 的 density
+        float localDensities[NUM_ROLES];
+        if (densities) {
+            for (int r = 0; r < NUM_ROLES; r++) {
+                localDensities[r] = densities[r];
+            }
+        } else {
+            // 從當前風格取得範圍，用 variation 計算
+            for (int r = 0; r < NUM_ROLES; r++) {
+                float dMin = StyleWeights::getDensityMin(static_cast<Role>(r));
+                float dMax = StyleWeights::getDensityMax(static_cast<Role>(r));
+                localDensities[r] = dMin + variation * (dMax - dMin);
+            }
         }
 
         // 1. Timeline (Voice 0: Primary, Voice 1: Secondary)
-        result.patterns[0] = generatePrimary(TIMELINE, length, densities[TIMELINE], variation);
-        result.patterns[1] = generateWithInterlock(TIMELINE, length, densities[TIMELINE] * 0.5f,
+        result.patterns[0] = generatePrimary(TIMELINE, length, localDensities[TIMELINE], variation);
+        result.patterns[1] = generateWithInterlock(TIMELINE, length, localDensities[TIMELINE] * 0.5f,
                                                    variation + 0.2f, result.patterns[0]);
 
         // 2. Foundation (Voice 2: Primary, Voice 3: Secondary)
-        result.patterns[2] = generateFoundation(length, densities[FOUNDATION], variation);
-        result.patterns[3] = generateWithInterlock(FOUNDATION, length, densities[FOUNDATION] * 0.5f,
+        result.patterns[2] = generateFoundation(length, localDensities[FOUNDATION], variation);
+        result.patterns[3] = generateWithInterlock(FOUNDATION, length, localDensities[FOUNDATION] * 0.5f,
                                                    variation + 0.2f, result.patterns[2]);
 
         // 3. Groove (Voice 4: Primary, Voice 5: Secondary)
-        result.patterns[4] = generateGroove(length, densities[GROOVE], variation);
-        result.patterns[5] = generateWithInterlock(GROOVE, length, densities[GROOVE] * 0.6f,
+        result.patterns[4] = generateGroove(length, localDensities[GROOVE], variation);
+        result.patterns[5] = generateWithInterlock(GROOVE, length, localDensities[GROOVE] * 0.6f,
                                                    variation + 0.2f, result.patterns[4]);
 
         // 4. Lead (Voice 6: Primary, Voice 7: Secondary)
-        result.patterns[6] = generatePrimary(LEAD, length, densities[LEAD], variation);
-        result.patterns[7] = generateWithInterlock(LEAD, length, densities[LEAD] * 0.5f,
+        result.patterns[6] = generatePrimary(LEAD, length, localDensities[LEAD], variation);
+        result.patterns[7] = generateWithInterlock(LEAD, length, localDensities[LEAD] * 0.5f,
                                                    variation + 0.2f, result.patterns[6]);
 
         return result;
@@ -362,6 +371,14 @@ struct SynthModifiers {
 };
 
 /**
+ * Crossfade 觸發決策結果
+ */
+struct CrossfadeDecision {
+    bool shouldTrigger;
+    float velocity;
+};
+
+/**
  * Techno Pattern 引擎
  */
 class TechnoPatternEngine {
@@ -383,8 +400,22 @@ public:
     int getStyleIdx() const { return currentStyleIdx_; }
     const char* getStyleName() const { return TechnoMachine::getStyleName(currentStyleIdx_); }
 
+    // Density 控制
+    void setDensity(Role role, float density) {
+        if (role >= 0 && role < NUM_ROLES) {
+            roleDensities_[role] = std::clamp(density, 0.0f, 0.9f);
+        }
+    }
+
+    float getDensity(Role role) const {
+        if (role >= 0 && role < NUM_ROLES) {
+            return roleDensities_[role];
+        }
+        return 0.5f;
+    }
+
     void regenerate(int length = 16, float variation = 0.5f) {
-        patterns_ = generator_.generate(length, variation);
+        patterns_ = generator_.generate(length, variation, roleDensities_);
         currentVariation_ = variation;
         patternLength_ = length;
 
@@ -438,6 +469,112 @@ public:
         }
     }
 
+    // === DJ Crossfade 系統 ===
+
+    /**
+     * 開始 crossfade 過渡
+     * 儲存當前 patterns 作為 outgoing，生成新 patterns 作為 incoming
+     */
+    void startCrossfade(int durationBars, float newVariation) {
+        // 儲存當前 patterns 作為 outgoing
+        outgoingPatterns_ = patterns_;
+
+        // 生成新 patterns
+        regenerate(patternLength_, newVariation);
+
+        // 設定 crossfade 狀態
+        crossfadeDurationBars_ = std::max(1, durationBars);
+        crossfadeBarCount_ = 0;
+        crossfadeProgress_ = 0.0f;
+        isCrossfading_ = true;
+    }
+
+    /**
+     * 通知 crossfade 小節開始
+     */
+    void notifyCrossfadeBarStart() {
+        if (!isCrossfading_) return;
+
+        crossfadeBarCount_++;
+        crossfadeProgress_ = static_cast<float>(crossfadeBarCount_) /
+                            static_cast<float>(crossfadeDurationBars_);
+
+        if (crossfadeProgress_ >= 1.0f) {
+            crossfadeProgress_ = 1.0f;
+            isCrossfading_ = false;
+        }
+    }
+
+    bool isCrossfading() const { return isCrossfading_; }
+    float getCrossfadeProgress() const { return crossfadeProgress_; }
+
+    /**
+     * 取得 crossfade 觸發決策（機率混合）
+     * 使用 Equal Power 曲線混合 onset 機率
+     *
+     * @param voiceIdx 聲道索引
+     * @param step 當前 step
+     * @return 是否觸發及 velocity
+     */
+    CrossfadeDecision getCrossfadeDecision(int voiceIdx, int step) {
+        CrossfadeDecision result = {false, 0.0f};
+
+        if (!isCrossfading_) {
+            // 不在 crossfade 中，使用正常 pattern
+            const Pattern& p = getActivePattern(voiceIdx);
+            if (p.hasOnset(step)) {
+                result.shouldTrigger = true;
+                result.velocity = p.getVelocity(step);
+            }
+            return result;
+        }
+
+        // 計算 Equal Power 權重
+        float t = crossfadeProgress_;
+        float outWeight = static_cast<float>(std::cos(t * M_PI * 0.5));  // cos(0) = 1, cos(π/2) = 0
+        float inWeight = static_cast<float>(std::sin(t * M_PI * 0.5));   // sin(0) = 0, sin(π/2) = 1
+
+        // Foundation role（Voice 2, 3）使用 hard swap
+        int role = voiceIdx / 2;
+        if (role == FOUNDATION) {
+            return getFoundationSwapDecision(voiceIdx, step, t);
+        }
+
+        // 其他 role 使用機率混合
+        const Pattern& outPattern = outgoingPatterns_.getPattern(voiceIdx);
+        const Pattern& inPattern = patterns_.getPattern(voiceIdx);
+
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        float randVal = dist(rng_);
+
+        bool outHas = outPattern.hasOnset(step);
+        bool inHas = inPattern.hasOnset(step);
+
+        if (outHas && inHas) {
+            // 兩個都有 onset：混合 velocity
+            float outVel = outPattern.getVelocity(step) * outWeight;
+            float inVel = inPattern.getVelocity(step) * inWeight;
+            result.shouldTrigger = true;
+            result.velocity = outVel + inVel;
+        }
+        else if (outHas) {
+            // 只有 outgoing 有：機率隨 outWeight 降低
+            if (randVal < outWeight) {
+                result.shouldTrigger = true;
+                result.velocity = outPattern.getVelocity(step) * outWeight;
+            }
+        }
+        else if (inHas) {
+            // 只有 incoming 有：機率隨 inWeight 提升
+            if (randVal < inWeight) {
+                result.shouldTrigger = true;
+                result.velocity = inPattern.getVelocity(step) * inWeight;
+            }
+        }
+
+        return result;
+    }
+
 private:
     PatternGenerator generator_;
     MultiVoicePatterns patterns_;
@@ -447,12 +584,49 @@ private:
     int patternLength_ = 16;
     int currentStyleIdx_ = 0;  // 預設 Techno
 
+    // Per-role density（0.0 - 0.9）
+    float roleDensities_[NUM_ROLES] = {0.4f, 0.2f, 0.5f, 0.5f};  // Timeline, Foundation, Groove, Lead
+
     // Fill 狀態
     int fillInterval_ = 4;  // 預設每 4 bars
     bool fillActive_ = false;
     int fillStepsRemaining_ = 0;
 
+    // Crossfade 狀態
+    MultiVoicePatterns outgoingPatterns_;
+    bool isCrossfading_ = false;
+    float crossfadeProgress_ = 0.0f;
+    int crossfadeDurationBars_ = 8;
+    int crossfadeBarCount_ = 0;
+
     std::mt19937 rng_;
+
+    /**
+     * Foundation（Kick）的 hard swap 決策
+     * 不同時播放兩個 kick pattern，在 50% 進度時瞬間切換
+     */
+    CrossfadeDecision getFoundationSwapDecision(int voiceIdx, int step, float progress) {
+        CrossfadeDecision result = {false, 0.0f};
+
+        const Pattern& outPattern = outgoingPatterns_.getPattern(voiceIdx);
+        const Pattern& inPattern = patterns_.getPattern(voiceIdx);
+
+        if (progress < 0.5f) {
+            // 前半段：只播放 outgoing
+            if (outPattern.hasOnset(step)) {
+                result.shouldTrigger = true;
+                result.velocity = outPattern.getVelocity(step);
+            }
+        } else {
+            // 後半段：只播放 incoming
+            if (inPattern.hasOnset(step)) {
+                result.shouldTrigger = true;
+                result.velocity = inPattern.getVelocity(step);
+            }
+        }
+
+        return result;
+    }
 
     /**
      * 加入 Ghost Notes - 低 velocity 裝飾音
@@ -530,7 +704,7 @@ private:
 
             // 加入額外的 fill 觸發
             int role = v / 2;
-            float baseDensity = StyleWeights::getDensityMax(static_cast<Role>(role));
+            float baseDensity = roleDensities_[role];
             float fillDensity = std::min(0.9f, baseDensity * fillDensityBoost);
 
             int extraOnsets = static_cast<int>((fillDensity - baseDensity) * length);

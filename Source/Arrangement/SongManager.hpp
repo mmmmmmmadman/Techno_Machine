@@ -48,8 +48,10 @@ public:
 
     /**
      * 產生隨機 Set
+     * @param numSongs 歌曲數量
+     * @param fixedBars 固定小節數（0 表示隨機 32-128）
      */
-    void generateRandomSet(int numSongs) {
+    void generateRandomSet(int numSongs, int fixedBars = 0) {
         songs_.clear();
 
         std::uniform_int_distribution<int> styleDist(0, NUM_STYLES - 1);
@@ -58,16 +60,26 @@ public:
         std::uniform_real_distribution<float> energyDist(0.3f, 0.9f);
 
         for (int i = 0; i < numSongs; i++) {
+            int bars = (fixedBars > 0) ? fixedBars : barsDist(rng_);
             songs_.emplace_back(
                 styleDist(rng_),
                 varDist(rng_),
-                barsDist(rng_),
+                bars,
                 energyDist(rng_)
             );
         }
 
         currentSongIdx_ = 0;
         barsInCurrentSong_ = 0;
+    }
+
+    /**
+     * 設定所有歌曲的長度
+     */
+    void setAllSongDuration(int bars) {
+        for (auto& song : songs_) {
+            song.durationBars = std::max(8, bars);
+        }
     }
 
     /**
@@ -123,8 +135,8 @@ public:
         if (triggerMode_ == TransitionTrigger::FIXED_BARS) {
             const Song& current = getCurrentSong();
 
-            // 提前開始過渡（在歌曲結束前 N bars）
-            int transitionStart = current.durationBars - transitionDurationBars_;
+            // 計算 phrase-aligned 過渡開始點
+            int transitionStart = calculatePhraseAlignedTransitionStart(current.durationBars);
 
             if (barsInCurrentSong_ == transitionStart) {
                 return true;  // 需要開始過渡
@@ -166,6 +178,9 @@ public:
     void setTransitionDuration(int bars) { transitionDurationBars_ = std::max(1, bars); }
     int getTransitionDuration() const { return transitionDurationBars_; }
 
+    void setPhraseLength(int bars) { phraseLength_ = std::max(4, bars); }
+    int getPhraseLength() const { return phraseLength_; }
+
     int getCurrentSongIdx() const { return currentSongIdx_; }
     int getBarsInCurrentSong() const { return barsInCurrentSong_; }
     int getSongCount() const { return static_cast<int>(songs_.size()); }
@@ -183,8 +198,29 @@ private:
 
     TransitionTrigger triggerMode_ = TransitionTrigger::FIXED_BARS;
     int transitionDurationBars_ = 8;  // 過渡持續小節數
+    int phraseLength_ = 8;  // 標準 phrase 長度（8 bars）
 
     std::mt19937 rng_;
+
+    /**
+     * 計算 phrase-aligned 過渡開始點
+     * 確保過渡在 phrase 邊界開始
+     */
+    int calculatePhraseAlignedTransitionStart(int songDuration) const {
+        // 基本過渡開始點
+        int basicStart = songDuration - transitionDurationBars_;
+
+        // 找到最接近的 phrase 邊界（向下取整到 phrase 倍數）
+        int alignedStart = (basicStart / phraseLength_) * phraseLength_;
+
+        // 確保至少有過渡時間
+        if (songDuration - alignedStart < transitionDurationBars_) {
+            // 提前一個 phrase
+            alignedStart = std::max(phraseLength_, alignedStart - phraseLength_);
+        }
+
+        return alignedStart;
+    }
 };
 
 } // namespace TechnoMachine

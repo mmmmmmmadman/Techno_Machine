@@ -2,7 +2,7 @@
 
 MainComponent::MainComponent()
 {
-    setSize(700, 450);
+    setSize(1050, 450);
 
     if (juce::RuntimePermissions::isRequired(juce::RuntimePermissions::recordAudio)
         && !juce::RuntimePermissions::isGranted(juce::RuntimePermissions::recordAudio))
@@ -101,12 +101,105 @@ MainComponent::MainComponent()
     addAndMakeVisible(leadSlider_);
     addAndMakeVisible(leadLabel_);
 
+    // === Density sliders ===
+    // (header drawn in paint())
+
+    // Timeline density（即時控制，不重新生成 pattern）
+    timelineDensitySlider_.setRange(0.0, 1.0, 0.01);
+    timelineDensitySlider_.setValue(1.0);
+    timelineDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
+    timelineDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    timelineDensitySlider_.onValueChange = [this] {
+        audioEngine_.setPlaybackDensity(Role::TIMELINE, static_cast<float>(timelineDensitySlider_.getValue()));
+    };
+    addAndMakeVisible(timelineDensitySlider_);
+
+    // Foundation density
+    foundationDensitySlider_.setRange(0.0, 1.0, 0.01);
+    foundationDensitySlider_.setValue(1.0);
+    foundationDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
+    foundationDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    foundationDensitySlider_.onValueChange = [this] {
+        audioEngine_.setPlaybackDensity(Role::FOUNDATION, static_cast<float>(foundationDensitySlider_.getValue()));
+    };
+    addAndMakeVisible(foundationDensitySlider_);
+
+    // Groove density
+    grooveDensitySlider_.setRange(0.0, 1.0, 0.01);
+    grooveDensitySlider_.setValue(1.0);
+    grooveDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
+    grooveDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    grooveDensitySlider_.onValueChange = [this] {
+        audioEngine_.setPlaybackDensity(Role::GROOVE, static_cast<float>(grooveDensitySlider_.getValue()));
+    };
+    addAndMakeVisible(grooveDensitySlider_);
+
+    // Lead density
+    leadDensitySlider_.setRange(0.0, 1.0, 0.01);
+    leadDensitySlider_.setValue(1.0);
+    leadDensitySlider_.setSliderStyle(juce::Slider::LinearVertical);
+    leadDensitySlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 18);
+    leadDensitySlider_.onValueChange = [this] {
+        audioEngine_.setPlaybackDensity(Role::LEAD, static_cast<float>(leadDensitySlider_.getValue()));
+    };
+    addAndMakeVisible(leadDensitySlider_);
+
+    // === DJ Set controls ===
+
+    // Generate Set button
+    generateSetButton_.onClick = [this] {
+        audioEngine_.generateRandomSet(8);  // 8 songs in set
+        updateDJInfo();
+    };
+    addAndMakeVisible(generateSetButton_);
+
+    // Next Song button
+    nextSongButton_.onClick = [this] {
+        audioEngine_.triggerNextSong();
+    };
+    addAndMakeVisible(nextSongButton_);
+
+    // Style label
+    styleLabel_.setFont(juce::FontOptions(18.0f).withStyle("Bold"));
+    styleLabel_.setColour(juce::Label::textColourId, juce::Colour(0xff00ffaa));
+    addAndMakeVisible(styleLabel_);
+
+    // Song info label
+    songInfoLabel_.setFont(juce::FontOptions(12.0f));
+    songInfoLabel_.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    addAndMakeVisible(songInfoLabel_);
+
+    // Transition progress bar
+    transitionProgress_.setColour(juce::ProgressBar::foregroundColourId, juce::Colour(0xff00aaff));
+    addAndMakeVisible(transitionProgress_);
+
+    // Song bars slider
+    songBarsSlider_.setRange(8, 128, 1);
+    songBarsSlider_.setValue(32);
+    songBarsSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
+    songBarsSlider_.onValueChange = [this] {
+        audioEngine_.setSongDuration(static_cast<int>(songBarsSlider_.getValue()));
+    };
+    addAndMakeVisible(songBarsSlider_);
+    addAndMakeVisible(songBarsLabel_);
+
+    // Transition bars slider
+    transitionBarsSlider_.setRange(2, 32, 1);
+    transitionBarsSlider_.setValue(8);
+    transitionBarsSlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
+    transitionBarsSlider_.onValueChange = [this] {
+        audioEngine_.setTransitionDuration(static_cast<int>(transitionBarsSlider_.getValue()));
+    };
+    addAndMakeVisible(transitionBarsSlider_);
+    addAndMakeVisible(transitionBarsLabel_);
+
     // Status label
     statusLabel_.setJustificationType(juce::Justification::centred);
-    statusLabel_.setFont(juce::Font(28.0f));
+    statusLabel_.setFont(juce::FontOptions(28.0f));
     addAndMakeVisible(statusLabel_);
 
     transport_.setTempo(128.0);
+    updateDJInfo();
 
     startTimerHz(30);
     updateUI();
@@ -157,9 +250,15 @@ void MainComponent::paint(juce::Graphics& g)
     g.setFont(36.0f);
     g.drawText("Techno Machine", getLocalBounds().removeFromTop(60), juce::Justification::centred);
 
-    // Mixer section header
-    g.setFont(14.0f);
-    g.drawText("MIXER", 30, 180, 100, 20, juce::Justification::left);
+    // Section headers - positioned at bottom area
+    g.setFont(13.0f);
+    int headerY = getHeight() - 175;
+
+    int densityStartX = 20 + (55 + 10) * 4 + 40;
+    g.drawText("DENSITY", densityStartX, headerY, 80, 18, juce::Justification::left);
+
+    int djX = densityStartX + (55 + 10) * 4 + 40;
+    g.drawText("DJ SET", djX, headerY, 80, 18, juce::Justification::left);
 }
 
 void MainComponent::resized()
@@ -191,13 +290,15 @@ void MainComponent::resized()
 
     area.removeFromTop(20);
 
-    // Mixer faders (4 channels)
+    // Mixer faders (4 channels) + Density faders
     auto mixerArea = area.removeFromTop(180);
     mixerArea.removeFromTop(25);
 
-    int faderWidth = 70;
-    int faderSpacing = 25;
+    int faderWidth = 55;
+    int faderSpacing = 10;
+    int sectionSpacing = 40;
 
+    // === LEVEL section ===
     auto timelineArea = mixerArea.removeFromLeft(faderWidth);
     timelineLabel_.setBounds(timelineArea.removeFromTop(20));
     timelineSlider_.setBounds(timelineArea);
@@ -219,11 +320,42 @@ void MainComponent::resized()
     auto leadArea = mixerArea.removeFromLeft(faderWidth);
     leadLabel_.setBounds(leadArea.removeFromTop(20));
     leadSlider_.setBounds(leadArea);
+
+    // === DENSITY section ===
+    mixerArea.removeFromLeft(sectionSpacing);
+
+    // Position density sliders
+    int densityStartX = 20 + (faderWidth + faderSpacing) * 4 + sectionSpacing;
+    int densityY = getHeight() - 155;
+
+    timelineDensitySlider_.setBounds(densityStartX, densityY, faderWidth, 130);
+    foundationDensitySlider_.setBounds(densityStartX + faderWidth + faderSpacing, densityY, faderWidth, 130);
+    grooveDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 2, densityY, faderWidth, 130);
+    leadDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 3, densityY, faderWidth, 130);
+
+    // === DJ Set controls (right side) ===
+    int djX = densityStartX + (faderWidth + faderSpacing) * 4 + 40;
+    int djY = getHeight() - 155;
+
+    generateSetButton_.setBounds(djX, djY, 95, 28);
+    nextSongButton_.setBounds(djX + 100, djY, 95, 28);
+
+    styleLabel_.setBounds(djX, djY + 35, 195, 22);
+    songInfoLabel_.setBounds(djX, djY + 55, 195, 18);
+    transitionProgress_.setBounds(djX, djY + 75, 195, 10);
+
+    // Settings sliders
+    songBarsLabel_.setBounds(djX, djY + 90, 65, 18);
+    songBarsSlider_.setBounds(djX + 65, djY + 90, 130, 18);
+
+    transitionBarsLabel_.setBounds(djX, djY + 110, 65, 18);
+    transitionBarsSlider_.setBounds(djX + 65, djY + 110, 130, 18);
 }
 
 void MainComponent::timerCallback()
 {
     updateUI();
+    updateDJInfo();
 }
 
 void MainComponent::updateUI()
@@ -242,4 +374,33 @@ void MainComponent::updateUI()
         status = "Stopped - Press Play";
     }
     statusLabel_.setText(status, juce::dontSendNotification);
+}
+
+void MainComponent::updateDJInfo()
+{
+    auto& te = audioEngine_.transitionEngine();
+    auto& sm = te.getSongManager();
+
+    // Style name
+    const char* styleName = audioEngine_.getStyleName();
+    styleLabel_.setText(juce::String("Style: ") + styleName, juce::dontSendNotification);
+
+    // Song info
+    int songIdx = sm.getCurrentSongIdx() + 1;
+    int totalSongs = sm.getSongCount();
+    int barsInSong = sm.getBarsInCurrentSong();
+    const auto& currentSong = sm.getCurrentSong();
+
+    juce::String songInfo;
+    if (te.isTransitioning()) {
+        songInfo = juce::String::formatted("Song %d/%d - TRANSITIONING...", songIdx, totalSongs);
+    } else {
+        songInfo = juce::String::formatted("Song %d/%d | Bar %d/%d",
+                                           songIdx, totalSongs, barsInSong, currentSong.durationBars);
+    }
+    songInfoLabel_.setText(songInfo, juce::dontSendNotification);
+
+    // Transition progress
+    transitionProgressValue_ = static_cast<double>(te.getTransitionProgress());
+    transitionProgress_.setVisible(te.isTransitioning());
 }
