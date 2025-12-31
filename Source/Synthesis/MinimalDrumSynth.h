@@ -55,6 +55,7 @@ public:
     void setMode(SynthMode m) { mode_ = m; }
     void setFreq(float f) { freq_ = std::max(20.0f, std::min(f, 20000.0f)); }
     void setDecay(float d) { decay_ = std::max(1.0f, std::min(d, 5000.0f)); }
+    float getFreq() const { return freq_; }
 
     /**
      * 觸發音符
@@ -360,6 +361,14 @@ public:
     void triggerVoice(int voiceIdx, float velocity = 1.0f) {
         if (voiceIdx < 0 || voiceIdx >= NUM_VOICES) return;
         voices_[voiceIdx].trigger(velocity);
+    }
+
+    /**
+     * 取得 Voice 的頻率（用於 CV 輸出）
+     */
+    float getVoiceFrequency(int voiceIdx) const {
+        if (voiceIdx < 0 || voiceIdx >= NUM_VOICES) return 440.0f;
+        return voices_[voiceIdx].getFreq();
     }
 
     /**

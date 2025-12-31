@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "UI/AudioSettingsWindow.h"
 
 MainComponent::MainComponent()
 {
@@ -14,16 +15,18 @@ MainComponent::MainComponent()
 
     setSize(1000, 420);
 
-    if (juce::RuntimePermissions::isRequired(juce::RuntimePermissions::recordAudio)
-        && !juce::RuntimePermissions::isGranted(juce::RuntimePermissions::recordAudio))
-    {
-        juce::RuntimePermissions::request(juce::RuntimePermissions::recordAudio,
-            [&](bool granted) { setAudioChannels(granted ? 2 : 0, 2); });
-    }
-    else
-    {
-        setAudioChannels(0, 2);
-    }
+    // Initialize application properties for settings persistence
+    juce::PropertiesFile::Options options;
+    options.applicationName = "TechnoMachine";
+    options.folderName = "MADZINE";
+    options.filenameSuffix = ".settings";
+    appProperties_.setStorageParameters(options);
+
+    // Initialize audio device
+    initializeAudio();
+
+    // Load saved settings
+    loadSettings();
 
     // Vibrant pink palette - high visibility
     auto bgDark = juce::Colour(0xff0e0c0c);      // dark warm black
@@ -70,6 +73,13 @@ MainComponent::MainComponent()
     styleButton(swingButton_, textDim);
     addAndMakeVisible(swingButton_);
 
+    // Settings button
+    settingsButton_.onClick = [this] {
+        openSettings();
+    };
+    styleButton(settingsButton_, textDim);
+    addAndMakeVisible(settingsButton_);
+
     // Slider styling helper
     auto styleSlider = [&](juce::Slider& slider) {
         slider.setColour(juce::Slider::backgroundColourId, bgMid);
@@ -96,7 +106,7 @@ MainComponent::MainComponent()
     styleSlider(tempoSlider_);
     addAndMakeVisible(tempoSlider_);
     styleLabel(tempoLabel_);
-    tempoLabel_.attachToComponent(&tempoSlider_, true);
+    tempoLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(tempoLabel_);
 
     // Global Density slider (offsets all 4 densities)
@@ -300,38 +310,100 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     stopTimer();
-    shutdownAudio();
+    saveSettings();
+    deviceManager_.removeAudioCallback(this);
+    deviceManager_.closeAudioDevice();
     setLookAndFeel(nullptr);
 }
 
-void MainComponent::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
+void MainComponent::initializeAudio()
 {
-    audioEngine_.prepare(sampleRate, samplesPerBlockExpected);
-    transport_.prepare(sampleRate);
-}
+    // Initialize audio device manager with multi-channel support
+    auto result = deviceManager_.initialise(
+        0,      // numInputChannels
+        32,     // numOutputChannels (request many for CV support)
+        nullptr,
+        true,   // selectDefaultDeviceOnFailure
+        {},     // preferredDeviceType
+        nullptr // preferredSetupOptions
+    );
 
-void MainComponent::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
-{
-    bufferToFill.clearActiveBufferRegion();
+    if (result.isNotEmpty()) {
+        DBG("Audio device initialization error: " + result);
+    }
 
-    if (transport_.isPlaying())
-    {
-        auto* leftChannel = bufferToFill.buffer->getWritePointer(0, bufferToFill.startSample);
-        auto* rightChannel = bufferToFill.buffer->getWritePointer(1, bufferToFill.startSample);
+    // Register as audio callback
+    deviceManager_.addAudioCallback(this);
 
-        for (int sample = 0; sample < bufferToFill.numSamples; ++sample)
-        {
-            transport_.advance();
-
-            auto output = audioEngine_.process(transport_);
-            leftChannel[sample] = output.left;
-            rightChannel[sample] = output.right;
-        }
+    // Set up default CV routing based on available channels
+    if (auto* device = deviceManager_.getCurrentAudioDevice()) {
+        int numChannels = device->getActiveOutputChannels().countNumberOfSetBits();
+        cvRouter_.setDefaultRouting(numChannels);
     }
 }
 
-void MainComponent::releaseResources()
+void MainComponent::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
+    double sampleRate = device->getCurrentSampleRate();
+    int blockSize = device->getCurrentBufferSizeSamples();
+
+    audioEngine_.prepare(sampleRate, blockSize);
+    transport_.prepare(sampleRate);
+    cvRouter_.setSampleRate(sampleRate);
+
+    // Update CV routing based on available channels
+    int numChannels = device->getActiveOutputChannels().countNumberOfSetBits();
+    cvRouter_.setDefaultRouting(numChannels);
+}
+
+void MainComponent::audioDeviceStopped()
+{
+    // Nothing to clean up
+}
+
+void MainComponent::audioDeviceIOCallbackWithContext(
+    const float* const* /*inputChannelData*/,
+    int /*numInputChannels*/,
+    float* const* outputChannelData,
+    int numOutputChannels,
+    int numSamples,
+    const juce::AudioIODeviceCallbackContext& /*context*/)
+{
+    // Clear all output channels
+    for (int ch = 0; ch < numOutputChannels; ++ch) {
+        juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
+    }
+
+    // Process audio
+    if (transport_.isPlaying()) {
+        for (int sample = 0; sample < numSamples; ++sample) {
+            transport_.advance();
+
+            auto output = audioEngine_.process(transport_);
+
+            // Stereo output to channels 0-1
+            if (numOutputChannels >= 1) {
+                outputChannelData[0][sample] = output.left;
+            }
+            if (numOutputChannels >= 2) {
+                outputChannelData[1][sample] = output.right;
+            }
+
+            // Check for triggers and notify CV router
+            // This is done per-sample to maintain timing accuracy
+            for (int voice = 0; voice < TechnoMachine::NUM_VOICES; ++voice) {
+                if (audioEngine_.wasVoiceTriggered(voice)) {
+                    float velocity = audioEngine_.getLastVelocity(voice);
+                    float freq = audioEngine_.drums().getVoiceFrequency(voice);
+                    cvRouter_.noteTrigger(voice, velocity);
+                    cvRouter_.setVoiceFrequency(voice, freq);
+                }
+            }
+        }
+    }
+
+    // Process CV outputs (channels 2+)
+    cvRouter_.process(outputChannelData, numOutputChannels, numSamples);
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -369,9 +441,13 @@ void MainComponent::resized()
     controlArea.removeFromLeft(8);
     stopButton_.setBounds(controlArea.removeFromLeft(70));
     controlArea.removeFromLeft(8);
-    swingButton_.setBounds(controlArea.removeFromLeft(100));
-    controlArea.removeFromLeft(50);
-    tempoSlider_.setBounds(controlArea.removeFromLeft(220));
+    swingButton_.setBounds(controlArea.removeFromLeft(80));
+    controlArea.removeFromLeft(16);
+    // BPM label positioned manually (not attached)
+    tempoLabel_.setBounds(controlArea.removeFromLeft(35));
+    tempoSlider_.setBounds(controlArea.removeFromLeft(200));
+    controlArea.removeFromLeft(16);
+    settingsButton_.setBounds(controlArea.removeFromLeft(80));
 
     area.removeFromTop(10);
 
@@ -514,5 +590,47 @@ void MainComponent::applyGlobalDensity()
     for (int i = 0; i < 4; i++) {
         float finalDensity = std::clamp(baseDensities_[i] + globalDensityOffset_, 0.0f, 1.0f);
         audioEngine_.setPlaybackDensity(roles[i], finalDensity);
+    }
+}
+
+void MainComponent::openSettings()
+{
+    if (settingsWindow_ == nullptr) {
+        settingsWindow_ = std::make_unique<AudioSettingsWindow>(deviceManager_, cvRouter_);
+    }
+    settingsWindow_->setVisible(true);
+    settingsWindow_->toFront(true);
+}
+
+void MainComponent::loadSettings()
+{
+    if (auto* props = appProperties_.getUserSettings()) {
+        // Load CV routing
+        juce::String cvState = props->getValue("cvRouting", "");
+        if (cvState.isNotEmpty()) {
+            cvRouter_.setStateFromString(cvState);
+        }
+
+        // Load audio device settings
+        auto savedState = props->getXmlValue("audioDeviceState");
+        if (savedState != nullptr) {
+            deviceManager_.initialise(0, 32, savedState.get(), true);
+        }
+    }
+}
+
+void MainComponent::saveSettings()
+{
+    if (auto* props = appProperties_.getUserSettings()) {
+        // Save CV routing
+        props->setValue("cvRouting", cvRouter_.getStateAsString());
+
+        // Save audio device settings
+        auto state = deviceManager_.createStateXml();
+        if (state != nullptr) {
+            props->setValue("audioDeviceState", state.get());
+        }
+
+        props->saveIfNeeded();
     }
 }

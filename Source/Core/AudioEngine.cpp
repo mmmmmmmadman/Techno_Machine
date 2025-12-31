@@ -217,6 +217,9 @@ void AudioEngine::processStep(int step)
             // density = 1.0 時全部播放，density = 0.0 時全部靜音
             if (density >= 1.0f || dist(densityRng_) < density) {
                 drums_.triggerVoice(v, decision.velocity);
+                // 設定 CV 觸發旗標
+                voiceTriggered_[v] = true;
+                lastVelocity_[v] = decision.velocity;
             }
         }
     }
@@ -318,4 +321,25 @@ AudioEngine::StereoOutput AudioEngine::process(const Transport& transport)
     // Process all drum voices and return stereo output
     auto output = drums_.process();
     return { output.left, output.right };
+}
+
+// === CV 輸出支援 ===
+
+bool AudioEngine::wasVoiceTriggered(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= TechnoMachine::NUM_VOICES) return false;
+    return voiceTriggered_[voiceIdx];
+}
+
+float AudioEngine::getLastVelocity(int voiceIdx) const
+{
+    if (voiceIdx < 0 || voiceIdx >= TechnoMachine::NUM_VOICES) return 0.0f;
+    return lastVelocity_[voiceIdx];
+}
+
+void AudioEngine::clearTriggerFlags()
+{
+    for (int i = 0; i < TechnoMachine::NUM_VOICES; i++) {
+        voiceTriggered_[i] = false;
+    }
 }

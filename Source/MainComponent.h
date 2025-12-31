@@ -4,6 +4,10 @@
 #include "BinaryData.h"
 #include "Core/AudioEngine.h"
 #include "Core/Transport.h"
+#include "Core/CVOutputRouter.h"
+
+// Forward declaration
+class AudioSettingsWindow;
 
 // Simple LookAndFeel to use embedded font
 class ThinFontLookAndFeel : public juce::LookAndFeel_V4
@@ -25,23 +29,40 @@ private:
     juce::Typeface::Ptr typeface_;
 };
 
-class MainComponent : public juce::AudioAppComponent,
+class MainComponent : public juce::Component,
+                      public juce::AudioIODeviceCallback,
                       public juce::Timer
 {
 public:
     MainComponent();
     ~MainComponent() override;
 
-    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
-    void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
-    void releaseResources() override;
+    // AudioIODeviceCallback
+    void audioDeviceIOCallbackWithContext(
+        const float* const* inputChannelData,
+        int numInputChannels,
+        float* const* outputChannelData,
+        int numOutputChannels,
+        int numSamples,
+        const juce::AudioIODeviceCallbackContext& context) override;
+
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
+    void audioDeviceStopped() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
 
     void timerCallback() override;
 
+    // Access for settings window
+    juce::AudioDeviceManager& getDeviceManager() { return deviceManager_; }
+    TechnoMachine::CVOutputRouter& getCVRouter() { return cvRouter_; }
+
 private:
+    // Audio device management
+    juce::AudioDeviceManager deviceManager_;
+    TechnoMachine::CVOutputRouter cvRouter_;
+
     // Embedded thin font for cross-platform
     juce::Typeface::Ptr thinTypeface_;
     ThinFontLookAndFeel thinLookAndFeel_;
@@ -53,6 +74,7 @@ private:
     juce::TextButton playButton_{"Play"};
     juce::TextButton stopButton_{"Stop"};
     juce::TextButton swingButton_{"Swing: Off"};
+    juce::TextButton settingsButton_{"Settings"};
 
     // Tempo
     juce::Slider tempoSlider_;
@@ -95,10 +117,20 @@ private:
     // Status
     juce::Label statusLabel_;
 
+    // Settings window
+    std::unique_ptr<AudioSettingsWindow> settingsWindow_;
+
+    // Application settings persistence
+    juce::ApplicationProperties appProperties_;
+
     void updateUI();
     void updateDJInfo();
     void cycleSwing();
     void applyGlobalDensity();
+    void openSettings();
+    void initializeAudio();
+    void loadSettings();
+    void saveSettings();
 
     int swingLevel_ = 1;  // default swing level 1
     float globalDensityOffset_ = 0.0f;

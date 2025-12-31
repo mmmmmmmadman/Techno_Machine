@@ -28,6 +28,8 @@ target_sources(TechnoMachine
         Source/Core/AudioEngine.cpp
         Source/Core/Clock.cpp
         Source/Core/Transport.cpp
+        Source/Core/CVOutputRouter.cpp
+        Source/UI/AudioSettingsWindow.cpp
 )
 
 target_compile_definitions(TechnoMachine

@@ -69,6 +69,11 @@ public:
     TechnoMachine::TechnoPatternEngine& patternEngine() { return patternEngine_; }
     TechnoMachine::TransitionEngine& transitionEngine() { return transitionEngine_; }
 
+    // CV 輸出支援：觸發追蹤
+    bool wasVoiceTriggered(int voiceIdx) const;
+    float getLastVelocity(int voiceIdx) const;
+    void clearTriggerFlags();  // 在每個 audio block 開始時呼叫
+
 private:
     double sampleRate_ = 48000.0;
     int samplesPerBlock_ = 256;
@@ -85,6 +90,10 @@ private:
 
     // 用於 density 過濾的隨機數生成器
     std::mt19937 densityRng_{std::random_device{}()};
+
+    // CV 輸出支援：觸發追蹤
+    bool voiceTriggered_[TechnoMachine::NUM_VOICES] = {false};
+    float lastVelocity_[TechnoMachine::NUM_VOICES] = {0.0f};
 
     void processStep(int step);
     void applySynthModifiers();
