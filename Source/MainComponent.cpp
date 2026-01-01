@@ -240,7 +240,7 @@ MainComponent::MainComponent()
 
     // === Crossfader ===
     crossfaderSlider_.setRange(0.0, 1.0, 0.01);
-    crossfaderSlider_.setValue(0.0);
+    crossfaderSlider_.setValue(0.0, juce::dontSendNotification);
     crossfaderSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
     crossfaderSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     crossfaderSlider_.onValueChange = [this] {
@@ -255,6 +255,28 @@ MainComponent::MainComponent()
     crossfaderLabel_.setColour(juce::Label::textColourId, textDim);
     crossfaderLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(crossfaderLabel_);
+
+    // === Build-up control ===
+    // Build button - hold to activate, release to drop
+    buildButton_.setClickingTogglesState(false);
+    buildButton_.addMouseListener(this, false);
+    styleButton(buildButton_, accent);
+    addAndMakeVisible(buildButton_);
+
+    // Bar duration selector
+    buildBarsSelector_.addItem("4", 4);
+    buildBarsSelector_.addItem("8", 8);
+    buildBarsSelector_.addItem("16", 16);
+    buildBarsSelector_.addItem("32", 32);
+    buildBarsSelector_.setSelectedId(8);  // Default 8 bars
+    buildBarsSelector_.onChange = [this] {
+        buildupDurationBars_ = buildBarsSelector_.getSelectedId();
+    };
+    buildBarsSelector_.setColour(juce::ComboBox::backgroundColourId, bgMid);
+    buildBarsSelector_.setColour(juce::ComboBox::textColourId, textLight);
+    buildBarsSelector_.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    buildBarsSelector_.setColour(juce::ComboBox::arrowColourId, accentDim);
+    addAndMakeVisible(buildBarsSelector_);
 
     // Role style labels
     for (int i = 0; i < 4; i++) {
@@ -559,10 +581,15 @@ void MainComponent::resized()
     crossfaderLabel_.setBounds(djX, djY + 30, 175, 14);
     crossfaderSlider_.setBounds(djX, djY + 44, 175, 22);
 
-    // Role style labels (2x2 grid)
+    // Build-up controls (below crossfader)
+    int buildY = djY + 70;
+    buildButton_.setBounds(djX, buildY, 70, 26);
+    buildBarsSelector_.setBounds(djX + 75, buildY, 50, 26);
+
+    // Role style labels (2x2 grid, below build controls)
     int labelW = 130;
     int labelH = 22;
-    int labelY = djY + 75;
+    int labelY = buildY + 32;
     roleStyleLabels_[0].setBounds(djX, labelY, labelW, labelH);           // Timeline
     roleStyleLabels_[1].setBounds(djX + 135, labelY, labelW, labelH);     // Foundation
     roleStyleLabels_[2].setBounds(djX, labelY + 24, labelW, labelH);      // Groove
@@ -618,6 +645,21 @@ void MainComponent::timerCallback()
 {
     updateUI();
     updateDJInfo();
+    updateBuildup();
+}
+
+void MainComponent::mouseDown(const juce::MouseEvent& event)
+{
+    if (event.eventComponent == &buildButton_) {
+        startBuildup();
+    }
+}
+
+void MainComponent::mouseUp(const juce::MouseEvent& event)
+{
+    if (event.eventComponent == &buildButton_) {
+        stopBuildup();
+    }
 }
 
 void MainComponent::updateUI()
@@ -741,4 +783,90 @@ void MainComponent::syncSwingFromStyle()
     swingLevel_ = transport_.getSwingLevel();
     const char* labels[] = {"Swing: Off", "Swing: 1", "Swing: 2", "Swing: 3"};
     swingButton_.setButtonText(labels[swingLevel_]);
+}
+
+void MainComponent::startBuildup()
+{
+    if (buildupActive_) return;
+
+    // Save current values
+    preBuildupFillIntensity_ = static_cast<float>(fillIntensitySlider_.getValue());
+    preBuildupGlobalDensity_ = static_cast<float>(globalDensitySlider_.getValue());
+    preBuildupFillInterval_ = audioEngine_.getFillInterval();
+
+    // Record start bar
+    buildupStartBar_ = transport_.getCurrentBar();
+    buildupActive_ = true;
+
+    // Visual feedback - change button color
+    buildButton_.setColour(juce::TextButton::buttonColourId, btnFlashColor_);
+}
+
+void MainComponent::stopBuildup()
+{
+    if (!buildupActive_) return;
+
+    buildupActive_ = false;
+
+    // Restore original values
+    fillIntensitySlider_.setValue(preBuildupFillIntensity_, juce::dontSendNotification);
+    audioEngine_.setFillIntensity(preBuildupFillIntensity_);
+
+    globalDensitySlider_.setValue(preBuildupGlobalDensity_, juce::dontSendNotification);
+    globalDensityOffset_ = preBuildupGlobalDensity_;
+    applyGlobalDensity();
+
+    audioEngine_.setFillInterval(preBuildupFillInterval_);
+
+    // Reset button color and text
+    buildButton_.setColour(juce::TextButton::buttonColourId, btnBgColor_);
+    buildButton_.setButtonText("Build");
+}
+
+void MainComponent::updateBuildup()
+{
+    if (!buildupActive_ || !transport_.isPlaying()) return;
+
+    // Calculate progress (0.0 to 1.0) with sub-bar precision
+    int currentBar = transport_.getCurrentBar();
+    float barFraction = transport_.getCurrentSixteenth() / 16.0f;  // 0-1 within bar
+    float elapsedBars = static_cast<float>(currentBar - buildupStartBar_) + barFraction;
+    float progress = elapsedBars / static_cast<float>(buildupDurationBars_);
+    progress = std::clamp(progress, 0.0f, 1.0f);
+
+    // Interpolate Fill Intensity: current → 1.0
+    float targetFill = preBuildupFillIntensity_ + (1.0f - preBuildupFillIntensity_) * progress;
+    fillIntensitySlider_.setValue(targetFill, juce::dontSendNotification);
+    audioEngine_.setFillIntensity(targetFill);
+
+    // Interpolate Global Density: linear rise to maximum (0.5)
+    float densityMod = preBuildupGlobalDensity_ + (0.5f - preBuildupGlobalDensity_) * progress;
+    densityMod = std::clamp(densityMod, -0.5f, 0.5f);
+    globalDensitySlider_.setValue(densityMod, juce::dontSendNotification);
+    globalDensityOffset_ = densityMod;
+    applyGlobalDensity();
+
+    // Adjust Fill Interval: shorten as progress increases
+    // 0-30%: original interval
+    // 30-60%: 2 bars
+    // 60-100%: 1 bar
+    int newInterval;
+    if (progress < 0.3f) {
+        newInterval = preBuildupFillInterval_;
+    } else if (progress < 0.6f) {
+        newInterval = std::min(preBuildupFillInterval_, 2);
+    } else {
+        newInterval = 1;
+    }
+    audioEngine_.setFillInterval(newInterval);
+
+    // Update button text to show progress
+    int percent = static_cast<int>(progress * 100.0f);
+    buildButton_.setButtonText(juce::String::formatted("Build %d%%", percent));
+
+    // Auto-complete when reaching 100%
+    if (progress >= 1.0f) {
+        // Keep at max values until button released
+        buildButton_.setButtonText("DROP!");
+    }
 }

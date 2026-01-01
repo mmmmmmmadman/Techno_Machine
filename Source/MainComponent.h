@@ -51,6 +51,10 @@ public:
 
     void timerCallback() override;
 
+    // Mouse events for Build button
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+
     // Access for settings window
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager_; }
     TechnoMachine::CVOutputRouter& getCVRouter() { return cvRouter_; }
@@ -103,6 +107,10 @@ private:
     juce::Slider crossfaderSlider_;
     juce::Label crossfaderLabel_{"", "CROSSFADER"};
 
+    // Build-up control
+    juce::TextButton buildButton_{"Build"};
+    juce::ComboBox buildBarsSelector_;
+
     // Role style display (4 labels)
     juce::Label roleStyleLabels_[4];
 
@@ -133,6 +141,18 @@ private:
     int swingLevel_ = 1;  // default swing level 1
     float globalDensityOffset_ = 0.0f;
     float baseDensities_[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+
+    // Build-up state
+    bool buildupActive_ = false;
+    int buildupStartBar_ = 0;
+    int buildupDurationBars_ = 8;
+    float preBuildupFillIntensity_ = 0.5f;
+    float preBuildupGlobalDensity_ = 0.0f;
+    int preBuildupFillInterval_ = 4;
+
+    void startBuildup();
+    void stopBuildup();
+    void updateBuildup();
 
     // Colors for button flash - vibrant pink
     juce::Colour btnBgColor_{0xff201a1a};

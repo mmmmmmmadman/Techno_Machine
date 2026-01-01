@@ -1,5 +1,27 @@
 # Techno Machine - Changelog
 
+## [0.3.1] - 2026-01-01
+
+### New Features
+- Build-up button for DJ-style tension control
+  - Hold button to start build-up automation
+  - Selectable duration (4/8/16/32 bars)
+  - Fill Intensity: linear rise to maximum (1.0)
+  - Global Density: linear rise to maximum (0.5)
+  - Fill Interval: progressive shortening (original → 2 bars → 1 bar)
+  - Smooth progress with sub-bar precision (sixteenth-based)
+  - Release button to restore original values (instant drop effect)
+
+### UI
+- Build button with bar selector next to crossfader
+- Visual feedback: button lights up during build-up, shows percentage
+
+### Bug Fixes
+- Fixed default Swing level 1 not showing at startup (crossfader init issue)
+- Fixed parameter jitter during build-up (use direct value assignment)
+
+---
+
 ## [0.3.0] - 2026-01-01
 
 ### New Features
