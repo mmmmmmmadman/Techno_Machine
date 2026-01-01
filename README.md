@@ -2,10 +2,21 @@
 
 Standalone Techno music generator with CV output support.
 
+## Documentation
+
+- [English](docs/INSTALL_EN.md) | [繁體中文](docs/INSTALL_ZH.md) | [日本語](docs/INSTALL_JP.md)
+
+## Download
+
+Visit [Releases](https://github.com/mmmmmmmadman/Techno_Machine/releases) to download the latest version.
+
 ## Features
 
 - **Drum Synthesis**: 4-role system (Timeline/Foundation/Groove/Lead) with 8 voices
 - **DJ Set Mode**: Dual deck architecture with crossfader
+- **Markov Chain Sequencer**: Organic rhythm variation controlled by Density
+- **Build-up Automation**: Hold-to-build DJ-style tension control
+- **Fill System**: Intensity-based fills with continuous mode at 100%
 - **CV Output**: 24 CV signals (Trigger/Pitch/Velocity per voice)
 - **Multi-channel Audio**: Supports DC-coupled interfaces for CV output
 
