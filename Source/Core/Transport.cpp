@@ -50,6 +50,26 @@ void Transport::setSwingLevel(int level)
     swingLevel_ = std::clamp(level, 0, 3);
 }
 
+void Transport::setSwingRatio(float ratio)
+{
+    // Find nearest swing level
+    // swingAmounts_[4] = {0.50f, 0.54f, 0.62f, 0.67f}
+    ratio = std::clamp(ratio, 0.5f, 0.67f);
+
+    int bestLevel = 0;
+    float bestDiff = std::abs(ratio - swingAmounts_[0]);
+
+    for (int i = 1; i < 4; i++) {
+        float diff = std::abs(ratio - swingAmounts_[i]);
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            bestLevel = i;
+        }
+    }
+
+    swingLevel_ = bestLevel;
+}
+
 void Transport::advance()
 {
     if (!playing_) return;

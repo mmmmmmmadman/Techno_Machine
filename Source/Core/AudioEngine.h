@@ -64,6 +64,9 @@ public:
     const char* getDeckBStyleName() const;
     const char* getDeckRoleStyleName(int deck, TechnoMachine::Role role) const;
 
+    // Swing: 取得當前混合後的風格 swing 值
+    float getStyleSwing() const { return patternEngine_.getMixedSwing(); }
+
     // 子系統存取
     TechnoMachine::MinimalDrumSynth& drums() { return drums_; }
     TechnoMachine::TechnoPatternEngine& patternEngine() { return patternEngine_; }

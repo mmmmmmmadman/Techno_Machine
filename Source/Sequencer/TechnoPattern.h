@@ -475,6 +475,20 @@ public:
         return 0;
     }
 
+    /**
+     * 取得混合後的 Swing 值
+     * 根據 crossfader 位置混合 Deck A 和 B 的風格 swing
+     */
+    float getMixedSwing() const {
+        float djPos = applyDJCurve(crossfaderPosition_);
+
+        // 取得各 Deck 主要風格的 swing（使用 Foundation 的風格作為代表）
+        float swingA = STYLES[deckA_.styleIndices[FOUNDATION]]->swing;
+        float swingB = STYLES[deckB_.styleIndices[FOUNDATION]]->swing;
+
+        return swingA * (1.0f - djPos) + swingB * djPos;
+    }
+
     // 取得當前作用中 Deck 的風格名稱
     const char* getStyleName() const {
         return getDeckStyleName((crossfaderPosition_ < 0.5f) ? 0 : 1);

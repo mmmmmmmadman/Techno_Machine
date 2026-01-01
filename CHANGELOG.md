@@ -92,8 +92,11 @@ TechnoMachine/
 
 - [x] CV output routing
 - [x] Audio device selection
-- [ ] Euclidean sequencer
+- [x] Swing from style profile
+- [ ] Markov chain sequencer
 - [ ] Conditional triggers (Elektron-style)
+- [ ] Parameter locking
+- [ ] Enhanced fill system (length/complexity/density control)
 - [ ] Section management (Intro/Build/Drop/Breakdown)
 - [ ] Transition engine
 - [ ] Effects (Filter, Delay, Reverb)

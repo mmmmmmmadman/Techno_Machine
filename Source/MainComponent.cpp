@@ -244,6 +244,7 @@ MainComponent::MainComponent()
     // Load A button with flash effect
     loadAButton_.onClick = [this] {
         audioEngine_.loadToDeck(0);
+        syncSwingFromStyle();
         updateDJInfo();
         // Flash effect
         loadAButton_.setColour(juce::TextButton::buttonColourId, btnFlashColor_);
@@ -257,6 +258,7 @@ MainComponent::MainComponent()
     // Load B button with flash effect
     loadBButton_.onClick = [this] {
         audioEngine_.loadToDeck(1);
+        syncSwingFromStyle();
         updateDJInfo();
         // Flash effect
         loadBButton_.setColour(juce::TextButton::buttonColourId, btnFlashColor_);
@@ -274,6 +276,7 @@ MainComponent::MainComponent()
     crossfaderSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     crossfaderSlider_.onValueChange = [this] {
         audioEngine_.setCrossfader(static_cast<float>(crossfaderSlider_.getValue()));
+        syncSwingFromStyle();
         updateDJInfo();
     };
     styleSlider(crossfaderSlider_);
@@ -298,8 +301,7 @@ MainComponent::MainComponent()
     addAndMakeVisible(statusLabel_);
 
     transport_.setTempo(132.0);  // Default 132 BPM
-    transport_.setSwingLevel(1);  // Default swing level 1
-    swingButton_.setButtonText("Swing: 1");
+    syncSwingFromStyle();  // Apply style's swing to transport
     updateDJInfo();
     applyGlobalDensity();  // Apply initial densities
 
@@ -633,4 +635,16 @@ void MainComponent::saveSettings()
 
         props->saveIfNeeded();
     }
+}
+
+void MainComponent::syncSwingFromStyle()
+{
+    // Get style's swing ratio and apply to transport
+    float styleSwing = audioEngine_.getStyleSwing();
+    transport_.setSwingRatio(styleSwing);
+
+    // Update UI to reflect new swing level
+    swingLevel_ = transport_.getSwingLevel();
+    const char* labels[] = {"Swing: Off", "Swing: 1", "Swing: 2", "Swing: 3"};
+    swingButton_.setButtonText(labels[swingLevel_]);
 }

@@ -131,6 +131,7 @@ private:
     void initializeAudio();
     void loadSettings();
     void saveSettings();
+    void syncSwingFromStyle();
 
     int swingLevel_ = 1;  // default swing level 1
     float globalDensityOffset_ = 0.0f;

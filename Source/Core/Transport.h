@@ -34,6 +34,11 @@ public:
     void setSwingLevel(int level);
     int getSwingLevel() const { return swingLevel_; }
 
+    // Set swing by ratio (0.5 = straight, 0.67 = triplet)
+    // Maps to nearest level automatically
+    void setSwingRatio(float ratio);
+    float getSwingRatio() const { return swingAmounts_[swingLevel_]; }
+
 private:
     Clock clock_;
     bool playing_ = false;
