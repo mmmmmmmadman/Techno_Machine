@@ -1,5 +1,24 @@
 # Techno Machine - Changelog
 
+## [0.3.2] - 2026-01-01
+
+### New Features
+- Markov Chain Sequencer integration
+  - Per-voice Markov chains with transition matrix
+  - Temperature parameter controlled by Density (higher = more random)
+  - Additive triggers when Density > 0.3
+  - Fill mode boosts Markov trigger probability
+- Fill Intensity 100% = Continuous Fill mode
+  - Fill stays active indefinitely at max intensity
+  - Provides constant fill pattern playback
+
+### Technical
+- MarkovChain.hpp with MarkovState (REST/HIT) and transition logic
+- MarkovEngine manages 8 voice chains with role-specific base probabilities
+- Integrated into getMixDecision for organic rhythm variation
+
+---
+
 ## [0.3.1] - 2026-01-01
 
 ### New Features
@@ -135,10 +154,10 @@ TechnoMachine/
 - [x] CV output routing
 - [x] Audio device selection
 - [x] Swing from style profile
-- [ ] Markov chain sequencer
+- [x] Markov chain sequencer
+- [x] Enhanced fill system (length/complexity/density control)
 - [ ] Conditional triggers (Elektron-style)
 - [ ] Parameter locking
-- [ ] Enhanced fill system (length/complexity/density control)
 - [ ] Section management (Intro/Build/Drop/Breakdown)
 - [ ] Transition engine
 - [ ] Effects (Filter, Delay, Reverb)

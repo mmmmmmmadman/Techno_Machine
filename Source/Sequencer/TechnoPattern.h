@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include "StyleProfiles.hpp"
+#include "MarkovChain.hpp"
 #include "../Synthesis/MinimalDrumSynth.h"
 
 namespace TechnoMachine {
@@ -611,6 +612,13 @@ public:
     const FillSettings& getFillSettings() const { return fillSettings_; }
 
     void notifyBarStart(int barNumber) {
+        // Fill Intensity 100% = 持續過門模式
+        if (fillSettings_.intensity >= 1.0f) {
+            fillActive_ = true;
+            fillStepsRemaining_ = fillSettings_.getLength();
+            return;
+        }
+
         // 每 N bars 觸發 Fill
         int interval = fillSettings_.interval;
         if (interval > 0 && barNumber > 0 && (barNumber % interval) == (interval - 1)) {
@@ -632,6 +640,12 @@ public:
     }
 
     void advanceStep() {
+        // Fill Intensity 100% = 持續過門，不結束
+        if (fillSettings_.intensity >= 1.0f) {
+            fillActive_ = true;
+            return;
+        }
+
         if (fillActive_ && fillStepsRemaining_ > 0) {
             fillStepsRemaining_--;
             if (fillStepsRemaining_ <= 0) {
@@ -776,12 +790,14 @@ public:
     /**
      * 取得混音決策
      * 根據 crossfader 位置決定播放哪個 pattern 的音符
-     * 所有角色都使用機率混合（DJ 曲線控制）
+     * 整合馬可夫鏈提供有機變化
      */
     CrossfadeDecision getMixDecision(int voiceIdx, int step) {
         CrossfadeDecision result = {false, 0.0f};
 
         float djPos = applyDJCurve(crossfaderPosition_);
+        int role = voiceIdx / 2;
+        float density = roleDensities_[role];
 
         // 選擇 pattern（考慮 Fill）
         const Pattern& patA = fillActive_ ?
@@ -794,6 +810,20 @@ public:
         bool hasA = patA.hasOnset(step);
         bool hasB = patB.hasOnset(step);
 
+        // 取得風格權重作為馬可夫輸入
+        const float* weightsA = StyleWeights::getWeights(static_cast<Role>(role));
+        float stepWeight = weightsA[step % 16];
+
+        // 更新馬可夫鏈參數
+        markov_.getChain(voiceIdx).setStepWeight(stepWeight, density);
+        markov_.getChain(voiceIdx).setTemperature(0.5f + density);
+
+        // 馬可夫決策
+        bool markovHit = false;
+        if (markovEnabled_) {
+            markovHit = markov_.getChain(voiceIdx).step(fillActive_, fillSettings_.intensity);
+        }
+
         // 所有角色：機率混合
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
         float randVal = dist(rng_);
@@ -801,27 +831,40 @@ public:
         float weightA = 1.0f - djPos;
         float weightB = djPos;
 
+        // Pattern 決策
+        bool patternTrigger = false;
+        float patternVel = 0.0f;
+
         if (hasA && hasB) {
-            // 兩邊都有：根據權重選擇其一
             if (randVal < weightB) {
-                result.shouldTrigger = true;
-                result.velocity = patB.getVelocity(step);
+                patternTrigger = true;
+                patternVel = patB.getVelocity(step);
             } else {
-                result.shouldTrigger = true;
-                result.velocity = patA.getVelocity(step);
+                patternTrigger = true;
+                patternVel = patA.getVelocity(step);
             }
         } else if (hasA) {
-            // 只有 A：機率 = weightA
             if (randVal < weightA) {
-                result.shouldTrigger = true;
-                result.velocity = patA.getVelocity(step);
+                patternTrigger = true;
+                patternVel = patA.getVelocity(step);
             }
         } else if (hasB) {
-            // 只有 B：機率 = weightB
             if (randVal < weightB) {
-                result.shouldTrigger = true;
-                result.velocity = patB.getVelocity(step);
+                patternTrigger = true;
+                patternVel = patB.getVelocity(step);
             }
+        }
+
+        // 整合 Pattern 和馬可夫決策
+        if (patternTrigger) {
+            // Pattern 有觸發：使用 pattern
+            result.shouldTrigger = true;
+            result.velocity = patternVel;
+        } else if (markovHit && density > 0.3f) {
+            // Pattern 沒觸發但馬可夫說要打：額外觸發（需 density > 0.3）
+            result.shouldTrigger = true;
+            // 馬可夫觸發的音符稍弱
+            result.velocity = 0.4f + density * 0.3f;
         }
 
         return result;
@@ -882,6 +925,10 @@ private:
 
     // 相容舊介面
     int currentStyleIdx_ = 0;
+
+    // 馬可夫鏈引擎
+    MarkovEngine markov_;
+    bool markovEnabled_ = true;
 
     std::mt19937 rng_;
 
