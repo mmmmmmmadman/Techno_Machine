@@ -1,5 +1,4 @@
 #include "MainComponent.h"
-#include "UI/AudioSettingsWindow.h"
 
 MainComponent::MainComponent()
 {
@@ -13,7 +12,7 @@ MainComponent::MainComponent()
     thinLookAndFeel_.setTypeface(thinTypeface_);
     setLookAndFeel(&thinLookAndFeel_);
 
-    setSize(1000, 420);
+    setSize(1000, 380);
 
     // Initialize application properties for settings persistence
     juce::PropertiesFile::Options options;
@@ -73,12 +72,7 @@ MainComponent::MainComponent()
     styleButton(swingButton_, textDim);
     addAndMakeVisible(swingButton_);
 
-    // Settings button
-    settingsButton_.onClick = [this] {
-        openSettings();
-    };
-    styleButton(settingsButton_, textDim);
-    addAndMakeVisible(settingsButton_);
+    // Settings button - removed (CV routing now inline)
 
     // Slider styling helper
     auto styleSlider = [&](juce::Slider& slider) {
@@ -123,65 +117,28 @@ MainComponent::MainComponent()
     globalDensityLabel_.attachToComponent(&globalDensitySlider_, true);
     addAndMakeVisible(globalDensityLabel_);
 
+    // Fill Intensity slider (controls fill length/complexity/density)
+    fillIntensitySlider_.setRange(0.0, 1.0, 0.01);
+    fillIntensitySlider_.setValue(0.5);
+    fillIntensitySlider_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 45, 18);
+    fillIntensitySlider_.onValueChange = [this] {
+        audioEngine_.setFillIntensity(static_cast<float>(fillIntensitySlider_.getValue()));
+    };
+    styleSlider(fillIntensitySlider_);
+    addAndMakeVisible(fillIntensitySlider_);
+    styleLabel(fillIntensityLabel_);
+    fillIntensityLabel_.attachToComponent(&fillIntensitySlider_, true);
+    addAndMakeVisible(fillIntensityLabel_);
+
     using Role = TechnoMachine::Role;
 
-    // Timeline (Hi-Hat) level
-    timelineSlider_.setRange(0.0, 1.0, 0.01);
-    timelineSlider_.setValue(0.5);
-    timelineSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    timelineSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
-    timelineSlider_.onValueChange = [this] {
-        audioEngine_.drums().setLevel(Role::TIMELINE, static_cast<float>(timelineSlider_.getValue()));
-    };
-    styleSlider(timelineSlider_);
-    addAndMakeVisible(timelineSlider_);
-    styleLabel(timelineLabel_);
-    timelineLabel_.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(timelineLabel_);
+    // Fixed levels at 80% (removed level sliders)
+    audioEngine_.drums().setLevel(Role::TIMELINE, 0.8f);
+    audioEngine_.drums().setLevel(Role::FOUNDATION, 0.8f);
+    audioEngine_.drums().setLevel(Role::GROOVE, 0.8f);
+    audioEngine_.drums().setLevel(Role::LEAD, 0.8f);
 
-    // Foundation (Kick) level
-    foundationSlider_.setRange(0.0, 1.5, 0.01);
-    foundationSlider_.setValue(1.0);
-    foundationSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    foundationSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
-    foundationSlider_.onValueChange = [this] {
-        audioEngine_.drums().setLevel(Role::FOUNDATION, static_cast<float>(foundationSlider_.getValue()));
-    };
-    styleSlider(foundationSlider_);
-    addAndMakeVisible(foundationSlider_);
-    styleLabel(foundationLabel_);
-    foundationLabel_.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(foundationLabel_);
-
-    // Groove (Clap) level
-    grooveSlider_.setRange(0.0, 1.0, 0.01);
-    grooveSlider_.setValue(0.7);
-    grooveSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    grooveSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
-    grooveSlider_.onValueChange = [this] {
-        audioEngine_.drums().setLevel(Role::GROOVE, static_cast<float>(grooveSlider_.getValue()));
-    };
-    styleSlider(grooveSlider_);
-    addAndMakeVisible(grooveSlider_);
-    styleLabel(grooveLabel_);
-    grooveLabel_.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(grooveLabel_);
-
-    // Lead (Rim) level
-    leadSlider_.setRange(0.0, 1.0, 0.01);
-    leadSlider_.setValue(0.5);
-    leadSlider_.setSliderStyle(juce::Slider::LinearVertical);
-    leadSlider_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 36, 16);
-    leadSlider_.onValueChange = [this] {
-        audioEngine_.drums().setLevel(Role::LEAD, static_cast<float>(leadSlider_.getValue()));
-    };
-    styleSlider(leadSlider_);
-    addAndMakeVisible(leadSlider_);
-    styleLabel(leadLabel_);
-    leadLabel_.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(leadLabel_);
-
-    // === Density sliders ===
+    // === Density sliders with labels ===
 
     // Timeline density - default 50%
     timelineDensitySlider_.setRange(0.0, 1.0, 0.01);
@@ -195,6 +152,9 @@ MainComponent::MainComponent()
     };
     styleSlider(timelineDensitySlider_);
     addAndMakeVisible(timelineDensitySlider_);
+    styleLabel(timelineDensityLabel_);
+    timelineDensityLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(timelineDensityLabel_);
 
     // Foundation density - default 50%
     foundationDensitySlider_.setRange(0.0, 1.0, 0.01);
@@ -208,6 +168,9 @@ MainComponent::MainComponent()
     };
     styleSlider(foundationDensitySlider_);
     addAndMakeVisible(foundationDensitySlider_);
+    styleLabel(foundationDensityLabel_);
+    foundationDensityLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(foundationDensityLabel_);
 
     // Groove density - default 50%
     grooveDensitySlider_.setRange(0.0, 1.0, 0.01);
@@ -221,6 +184,9 @@ MainComponent::MainComponent()
     };
     styleSlider(grooveDensitySlider_);
     addAndMakeVisible(grooveDensitySlider_);
+    styleLabel(grooveDensityLabel_);
+    grooveDensityLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(grooveDensityLabel_);
 
     // Lead density - default 50%
     leadDensitySlider_.setRange(0.0, 1.0, 0.01);
@@ -234,6 +200,9 @@ MainComponent::MainComponent()
     };
     styleSlider(leadDensitySlider_);
     addAndMakeVisible(leadDensitySlider_);
+    styleLabel(leadDensityLabel_);
+    leadDensityLabel_.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(leadDensityLabel_);
 
     // === DJ Set controls ===
 
@@ -294,6 +263,108 @@ MainComponent::MainComponent()
         addAndMakeVisible(roleStyleLabels_[i]);
     }
 
+    // === Inline CV Routing ===
+    // Voice group labels (Primary, Secondary)
+    const char* voiceGroupNames[] = {"Primary", "Secondary"};
+    for (int g = 0; g < 2; g++) {
+        cvVoiceGroupLabels_[g].setText(voiceGroupNames[g], juce::dontSendNotification);
+        cvVoiceGroupLabels_[g].setFont(juce::Font(thinTypeface_).withHeight(11.0f));
+        cvVoiceGroupLabels_[g].setColour(juce::Label::textColourId, textDim);
+        cvVoiceGroupLabels_[g].setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(cvVoiceGroupLabels_[g]);
+    }
+
+    // Column headers (Trigger, Pitch, Velocity × 2 voice groups)
+    const char* colNames[] = {"Trigger", "Pitch", "Velocity", "Trigger", "Pitch", "Velocity"};
+    for (int c = 0; c < 6; c++) {
+        cvColHeaders_[c].setText(colNames[c], juce::dontSendNotification);
+        cvColHeaders_[c].setFont(juce::Font(thinTypeface_).withHeight(10.0f));
+        cvColHeaders_[c].setColour(juce::Label::textColourId, accentDim);
+        cvColHeaders_[c].setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(cvColHeaders_[c]);
+    }
+
+    // Role labels
+    const char* roleNames[] = {"TIMELINE", "FOUNDATION", "GROOVE", "LEAD"};
+    for (int r = 0; r < 4; r++) {
+        cvRoleLabels_[r].setText(roleNames[r], juce::dontSendNotification);
+        cvRoleLabels_[r].setFont(juce::Font(thinTypeface_).withHeight(11.0f));
+        cvRoleLabels_[r].setColour(juce::Label::textColourId, accentDim);
+        addAndMakeVisible(cvRoleLabels_[r]);
+    }
+
+    // === Audio Device Selector ===
+    audioDeviceSelector_.setColour(juce::ComboBox::backgroundColourId, bgMid);
+    audioDeviceSelector_.setColour(juce::ComboBox::textColourId, textLight);
+    audioDeviceSelector_.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    audioDeviceSelector_.setColour(juce::ComboBox::arrowColourId, accentDim);
+    audioDeviceSelector_.onChange = [this] {
+        int idx = audioDeviceSelector_.getSelectedId() - 1;
+        auto deviceType = deviceManager_.getCurrentAudioDeviceType();
+        if (!deviceType.isEmpty()) {
+            if (auto* type = deviceManager_.getAvailableDeviceTypes()[0]) {
+                auto deviceNames = type->getDeviceNames(false);  // false = output
+                if (idx >= 0 && idx < deviceNames.size()) {
+                    juce::AudioDeviceManager::AudioDeviceSetup setup;
+                    deviceManager_.getAudioDeviceSetup(setup);
+                    setup.outputDeviceName = deviceNames[idx];
+                    deviceManager_.setAudioDeviceSetup(setup, true);
+                }
+            }
+        }
+    };
+    addAndMakeVisible(audioDeviceSelector_);
+
+    // Populate audio device list
+    auto& deviceTypes = deviceManager_.getAvailableDeviceTypes();
+    if (deviceTypes.size() > 0) {
+        auto* type = deviceTypes[0];
+        auto deviceNames = type->getDeviceNames(false);  // false = output devices
+        int currentIdx = 0;
+        juce::String currentDevice;
+        if (auto* device = deviceManager_.getCurrentAudioDevice()) {
+            currentDevice = device->getName();
+        }
+        for (int i = 0; i < deviceNames.size(); i++) {
+            audioDeviceSelector_.addItem(deviceNames[i], i + 1);
+            if (deviceNames[i] == currentDevice) {
+                currentIdx = i;
+            }
+        }
+        if (deviceNames.size() > 0) {
+            audioDeviceSelector_.setSelectedId(currentIdx + 1, juce::dontSendNotification);
+        }
+    }
+
+    // 24 ComboBoxes: 4 roles × 2 voices × 3 signals (Trig/Pitch/Vel)
+    for (int i = 0; i < 24; i++) {
+        cvRouteBoxes_[i].addItem("...", 1);  // Off
+        for (int ch = 2; ch <= 25; ch++) {
+            cvRouteBoxes_[i].addItem(juce::String(ch), ch);
+        }
+        cvRouteBoxes_[i].setSelectedId(1);  // Default off
+        cvRouteBoxes_[i].setColour(juce::ComboBox::backgroundColourId, bgMid);
+        cvRouteBoxes_[i].setColour(juce::ComboBox::textColourId, textLight);
+        cvRouteBoxes_[i].setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+        cvRouteBoxes_[i].setColour(juce::ComboBox::arrowColourId, accentDim);
+
+        int boxIdx = i;
+        cvRouteBoxes_[i].onChange = [this, boxIdx] {
+            int role = boxIdx / 6;
+            int voiceInRole = (boxIdx % 6) / 3;
+            int signalType = boxIdx % 3;  // 0=Trig, 1=Pitch, 2=Vel
+            int voice = role * 2 + voiceInRole;
+
+            int selectedId = cvRouteBoxes_[boxIdx].getSelectedId();
+            int channel = (selectedId == 1) ? -1 : selectedId;  // -1 = off
+
+            int signalIdx = TechnoMachine::CVOutputRouter::getSignalIndex(
+                voice, static_cast<TechnoMachine::CVType>(signalType));
+            cvRouter_.setRoute(signalIdx, channel);
+        };
+        addAndMakeVisible(cvRouteBoxes_[i]);
+    }
+
     // Status label
     statusLabel_.setJustificationType(juce::Justification::centred);
     statusLabel_.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
@@ -301,7 +372,10 @@ MainComponent::MainComponent()
     addAndMakeVisible(statusLabel_);
 
     transport_.setTempo(132.0);  // Default 132 BPM
-    syncSwingFromStyle();  // Apply style's swing to transport
+    transport_.setSwingLevel(swingLevel_);  // Apply default swing level 1
+    // Update swing button text to match default level
+    const char* swingLabels[] = {"Swing: Off", "Swing: 1", "Swing: 2", "Swing: 3"};
+    swingButton_.setButtonText(swingLabels[swingLevel_]);
     updateDJInfo();
     applyGlobalDensity();  // Apply initial densities
 
@@ -418,18 +492,9 @@ void MainComponent::paint(juce::Graphics& g)
     g.setFont(juce::Font(thinTypeface_).withHeight(32.0f));
     g.drawText("TECHNO MACHINE", getLocalBounds().removeFromTop(50), juce::Justification::centred);
 
-    // Section header - 16pt, centered above density faders
-    g.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
-    g.setColour(juce::Colour(0xffa09098));
-    int headerY = getHeight() - 185;
-
-    int densityStartX = 20 + (65 + 8) * 4 + 35;
-    int densityWidth = (65 + 8) * 4 - 8;  // 4 faders width
-    g.drawText("DENSITY", densityStartX, headerY, densityWidth, 20, juce::Justification::centred);
-
-    // Thin separator line
+    // Thin separator line above bottom section
     g.setColour(juce::Colour(0xff302828));
-    g.drawLine(20, static_cast<float>(headerY - 5), static_cast<float>(getWidth() - 20), static_cast<float>(headerY - 5), 0.5f);
+    g.drawLine(20, static_cast<float>(getHeight() - 168), static_cast<float>(getWidth() - 20), static_cast<float>(getHeight() - 168), 0.5f);
 }
 
 void MainComponent::resized()
@@ -448,69 +513,44 @@ void MainComponent::resized()
     // BPM label positioned manually (not attached)
     tempoLabel_.setBounds(controlArea.removeFromLeft(35));
     tempoSlider_.setBounds(controlArea.removeFromLeft(200));
-    controlArea.removeFromLeft(16);
-    settingsButton_.setBounds(controlArea.removeFromLeft(80));
 
     area.removeFromTop(10);
 
-    // Global Density slider
+    // Global Density + Fill Intensity sliders (side by side)
     auto globalArea = area.removeFromTop(30);
-    globalArea.removeFromLeft(60);
-    globalDensitySlider_.setBounds(globalArea.removeFromLeft(220));
+    globalArea.removeFromLeft(60);  // Label space for "Global"
+    globalDensitySlider_.setBounds(globalArea.removeFromLeft(180));
+    globalArea.removeFromLeft(60);  // Label space for "Fill"
+    fillIntensitySlider_.setBounds(globalArea.removeFromLeft(180));
 
-    area.removeFromTop(15);
+    area.removeFromTop(5);
 
-    // Status
-    statusLabel_.setBounds(area.removeFromTop(50));
+    // Status (below Global/Fill)
+    statusLabel_.setBounds(20, 155, 480, 24);
 
-    area.removeFromTop(20);
-
-    // Mixer faders (4 channels) + Density faders
-    auto mixerArea = area.removeFromTop(180);
-    mixerArea.removeFromTop(25);
-
+    // === Bottom section: Density faders + DJ controls ===
     int faderWidth = 65;
     int faderSpacing = 8;
-    int sectionSpacing = 35;
+    int densityStartX = 20;
+    int densityY = getHeight() - 160;
 
-    // === LEVEL section ===
-    auto timelineArea = mixerArea.removeFromLeft(faderWidth);
-    timelineLabel_.setBounds(timelineArea.removeFromTop(20));
-    timelineSlider_.setBounds(timelineArea);
+    // Density labels
+    timelineDensityLabel_.setBounds(densityStartX, densityY, faderWidth, 18);
+    foundationDensityLabel_.setBounds(densityStartX + faderWidth + faderSpacing, densityY, faderWidth, 18);
+    grooveDensityLabel_.setBounds(densityStartX + (faderWidth + faderSpacing) * 2, densityY, faderWidth, 18);
+    leadDensityLabel_.setBounds(densityStartX + (faderWidth + faderSpacing) * 3, densityY, faderWidth, 18);
 
-    mixerArea.removeFromLeft(faderSpacing);
+    // Density sliders (below labels)
+    int sliderY = densityY + 20;
+    int sliderH = 130;
+    timelineDensitySlider_.setBounds(densityStartX, sliderY, faderWidth, sliderH);
+    foundationDensitySlider_.setBounds(densityStartX + faderWidth + faderSpacing, sliderY, faderWidth, sliderH);
+    grooveDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 2, sliderY, faderWidth, sliderH);
+    leadDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 3, sliderY, faderWidth, sliderH);
 
-    auto foundationArea = mixerArea.removeFromLeft(faderWidth);
-    foundationLabel_.setBounds(foundationArea.removeFromTop(20));
-    foundationSlider_.setBounds(foundationArea);
-
-    mixerArea.removeFromLeft(faderSpacing);
-
-    auto grooveArea = mixerArea.removeFromLeft(faderWidth);
-    grooveLabel_.setBounds(grooveArea.removeFromTop(20));
-    grooveSlider_.setBounds(grooveArea);
-
-    mixerArea.removeFromLeft(faderSpacing);
-
-    auto leadArea = mixerArea.removeFromLeft(faderWidth);
-    leadLabel_.setBounds(leadArea.removeFromTop(20));
-    leadSlider_.setBounds(leadArea);
-
-    // === DENSITY section ===
-    mixerArea.removeFromLeft(sectionSpacing);
-
-    // Position density sliders
-    int densityStartX = 20 + (faderWidth + faderSpacing) * 4 + sectionSpacing;
-    int densityY = getHeight() - 155;
-
-    timelineDensitySlider_.setBounds(densityStartX, densityY, faderWidth, 130);
-    foundationDensitySlider_.setBounds(densityStartX + faderWidth + faderSpacing, densityY, faderWidth, 130);
-    grooveDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 2, densityY, faderWidth, 130);
-    leadDensitySlider_.setBounds(densityStartX + (faderWidth + faderSpacing) * 3, densityY, faderWidth, 130);
-
-    // === DJ Set controls (right side) ===
-    int djX = densityStartX + (faderWidth + faderSpacing) * 4 + 35;
-    int djY = getHeight() - 155;
+    // === DJ Set controls (next to density faders) ===
+    int djX = densityStartX + (faderWidth + faderSpacing) * 4 + 25;
+    int djY = densityY;
 
     loadAButton_.setBounds(djX, djY, 85, 26);
     loadBButton_.setBounds(djX + 90, djY, 85, 26);
@@ -519,14 +559,59 @@ void MainComponent::resized()
     crossfaderLabel_.setBounds(djX, djY + 30, 175, 14);
     crossfaderSlider_.setBounds(djX, djY + 44, 175, 22);
 
-    // Role style labels (2x2 grid) - larger for bigger font
+    // Role style labels (2x2 grid)
     int labelW = 130;
-    int labelH = 24;
-    int labelY = djY + 70;
+    int labelH = 22;
+    int labelY = djY + 75;
     roleStyleLabels_[0].setBounds(djX, labelY, labelW, labelH);           // Timeline
     roleStyleLabels_[1].setBounds(djX + 135, labelY, labelW, labelH);     // Foundation
-    roleStyleLabels_[2].setBounds(djX, labelY + 26, labelW, labelH);      // Groove
-    roleStyleLabels_[3].setBounds(djX + 135, labelY + 26, labelW, labelH); // Lead
+    roleStyleLabels_[2].setBounds(djX, labelY + 24, labelW, labelH);      // Groove
+    roleStyleLabels_[3].setBounds(djX + 135, labelY + 24, labelW, labelH); // Lead
+
+    // === Audio Device Selector (top right) ===
+    audioDeviceSelector_.setBounds(560, 55, 300, 24);
+
+    // === CV Routing panel (upper right, below audio device) ===
+    int cvX = 560;  // Start position
+    int cvY = 85;   // Below audio device
+    int boxW = 50;  // ComboBox width
+    int boxH = 20;  // ComboBox height
+    int boxGap = 4; // Gap between boxes
+    int rowH = 24;  // Row height
+    int roleLabelW = 85;
+    int voiceGap = 14;  // Extra gap between V1 and V2 groups
+    int groupW = 3 * (boxW + boxGap) - boxGap;  // Width of one voice group
+
+    // Voice group labels row (Primary, Secondary)
+    int groupLabelY = cvY;
+    int group1X = cvX + roleLabelW;
+    int group2X = cvX + roleLabelW + 3 * (boxW + boxGap) + voiceGap;
+    cvVoiceGroupLabels_[0].setBounds(group1X, groupLabelY, groupW, 14);
+    cvVoiceGroupLabels_[1].setBounds(group2X, groupLabelY, groupW, 14);
+
+    // Column headers row (Trigger, Pitch, Velocity × 2)
+    int headerY = cvY + 14;
+    for (int c = 0; c < 6; c++) {
+        int extraGap = (c >= 3) ? voiceGap : 0;
+        int headerX = cvX + roleLabelW + c * (boxW + boxGap) + extraGap;
+        cvColHeaders_[c].setBounds(headerX, headerY, boxW, 14);
+    }
+
+    // Data rows start below headers
+    int dataY = cvY + 30;
+
+    // Layout: 4 rows (roles) × 6 ComboBoxes (V1:Trig/Pitch/Vel, V2:Trig/Pitch/Vel)
+    for (int r = 0; r < 4; r++) {
+        int rowY = dataY + r * rowH;
+        cvRoleLabels_[r].setBounds(cvX, rowY, roleLabelW, boxH);
+
+        for (int b = 0; b < 6; b++) {
+            int boxIdx = r * 6 + b;
+            int extraGap = (b >= 3) ? voiceGap : 0;  // Add gap between V1 and V2
+            int boxX = cvX + roleLabelW + b * (boxW + boxGap) + extraGap;
+            cvRouteBoxes_[boxIdx].setBounds(boxX, rowY, boxW, boxH);
+        }
+    }
 }
 
 void MainComponent::timerCallback()
@@ -595,15 +680,6 @@ void MainComponent::applyGlobalDensity()
     }
 }
 
-void MainComponent::openSettings()
-{
-    if (settingsWindow_ == nullptr) {
-        settingsWindow_ = std::make_unique<AudioSettingsWindow>(deviceManager_, cvRouter_);
-    }
-    settingsWindow_->setVisible(true);
-    settingsWindow_->toFront(true);
-}
-
 void MainComponent::loadSettings()
 {
     if (auto* props = appProperties_.getUserSettings()) {
@@ -611,6 +687,24 @@ void MainComponent::loadSettings()
         juce::String cvState = props->getValue("cvRouting", "");
         if (cvState.isNotEmpty()) {
             cvRouter_.setStateFromString(cvState);
+
+            // Sync inline ComboBoxes with loaded state
+            for (int r = 0; r < 4; r++) {
+                for (int v = 0; v < 2; v++) {
+                    int voice = r * 2 + v;
+                    for (int s = 0; s < 3; s++) {
+                        int boxIdx = r * 6 + v * 3 + s;
+                        int signalIdx = TechnoMachine::CVOutputRouter::getSignalIndex(
+                            voice, static_cast<TechnoMachine::CVType>(s));
+                        int channel = cvRouter_.getRoute(signalIdx);
+                        if (channel < 0) {
+                            cvRouteBoxes_[boxIdx].setSelectedId(1, juce::dontSendNotification);
+                        } else {
+                            cvRouteBoxes_[boxIdx].setSelectedId(channel, juce::dontSendNotification);
+                        }
+                    }
+                }
+            }
         }
 
         // Load audio device settings

@@ -6,9 +6,6 @@
 #include "Core/Transport.h"
 #include "Core/CVOutputRouter.h"
 
-// Forward declaration
-class AudioSettingsWindow;
-
 // Simple LookAndFeel to use embedded font
 class ThinFontLookAndFeel : public juce::LookAndFeel_V4
 {
@@ -74,7 +71,6 @@ private:
     juce::TextButton playButton_{"Play"};
     juce::TextButton stopButton_{"Stop"};
     juce::TextButton swingButton_{"Swing: Off"};
-    juce::TextButton settingsButton_{"Settings"};
 
     // Tempo
     juce::Slider tempoSlider_;
@@ -84,24 +80,20 @@ private:
     juce::Slider globalDensitySlider_;
     juce::Label globalDensityLabel_{"", "Global"};
 
-    // 4 Role levels
-    juce::Slider timelineSlider_;   // Hi-Hat
-    juce::Slider foundationSlider_; // Kick
-    juce::Slider grooveSlider_;     // Clap
-    juce::Slider leadSlider_;       // Rim
+    // Fill Intensity
+    juce::Slider fillIntensitySlider_;
+    juce::Label fillIntensityLabel_{"", "Fill"};
 
-    juce::Label timelineLabel_{"", "Timeline"};
-    juce::Label foundationLabel_{"", "Foundation"};
-    juce::Label grooveLabel_{"", "Groove"};
-    juce::Label leadLabel_{"", "Lead"};
-
-    // 4 Role density sliders
+    // 4 Role density sliders with labels
     juce::Slider timelineDensitySlider_;
     juce::Slider foundationDensitySlider_;
     juce::Slider grooveDensitySlider_;
     juce::Slider leadDensitySlider_;
 
-    juce::Label densityHeaderLabel_{"", "DENSITY"};
+    juce::Label timelineDensityLabel_{"", "Timeline"};
+    juce::Label foundationDensityLabel_{"", "Foundation"};
+    juce::Label grooveDensityLabel_{"", "Groove"};
+    juce::Label leadDensityLabel_{"", "Lead"};
 
     // DJ Set controls
     juce::TextButton loadAButton_{"Load A"};
@@ -117,8 +109,14 @@ private:
     // Status
     juce::Label statusLabel_;
 
-    // Settings window
-    std::unique_ptr<AudioSettingsWindow> settingsWindow_;
+    // Inline CV Routing (4 roles × 2 voices × 3 signals = 24 ComboBoxes)
+    juce::ComboBox cvRouteBoxes_[24];
+    juce::Label cvRoleLabels_[4];  // TIMELINE, FOUNDATION, GROOVE, LEAD
+    juce::Label cvColHeaders_[6];  // Trigger, Pitch, Velocity × 2
+    juce::Label cvVoiceGroupLabels_[2];  // Primary, Secondary
+
+    // Audio Device selector
+    juce::ComboBox audioDeviceSelector_;
 
     // Application settings persistence
     juce::ApplicationProperties appProperties_;
@@ -127,7 +125,6 @@ private:
     void updateDJInfo();
     void cycleSwing();
     void applyGlobalDensity();
-    void openSettings();
     void initializeAudio();
     void loadSettings();
     void saveSettings();

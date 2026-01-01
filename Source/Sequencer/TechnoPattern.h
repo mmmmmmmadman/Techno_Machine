@@ -417,6 +417,36 @@ struct CrossfadeDecision {
 };
 
 /**
+ * Enhanced Fill 設定
+ * intensity 控制所有衍生參數
+ */
+struct FillSettings {
+    float intensity = 0.5f;     // 0.0-1.0 整體強度
+    int interval = 4;           // 觸發間隔 (bars)
+
+    // 從 intensity 衍生的參數
+    int getLength() const {
+        // 2-14 steps based on intensity
+        return 2 + static_cast<int>(intensity * 12.0f);
+    }
+
+    int getComplexity() const {
+        // 1-4 roles participate (Timeline always, then Foundation, Groove, Lead)
+        return 1 + static_cast<int>(intensity * 3.0f);
+    }
+
+    float getDensity() const {
+        // 0.4-0.9 density for fill pattern
+        return 0.4f + intensity * 0.5f;
+    }
+
+    float getAccentProbability() const {
+        // High intensity adds accent hits
+        return (intensity > 0.6f) ? (intensity - 0.6f) * 2.5f : 0.0f;
+    }
+};
+
+/**
  * 混合後的音色預設（用於 crossfader 混合兩個風格）
  */
 struct MixedPreset {
@@ -567,14 +597,26 @@ public:
     }
 
     // Fill 系統
-    void setFillInterval(int bars) { fillInterval_ = std::max(1, bars); }
-    int getFillInterval() const { return fillInterval_; }
+    void setFillInterval(int bars) { fillSettings_.interval = std::max(1, bars); }
+    int getFillInterval() const { return fillSettings_.interval; }
+
+    void setFillIntensity(float intensity) {
+        fillSettings_.intensity = std::clamp(intensity, 0.0f, 1.0f);
+        // 重新生成 Fill patterns 以套用新的 intensity 設定
+        generateDeckFillPattern(deckA_, patternLength_, deckA_.variation);
+        generateDeckFillPattern(deckB_, patternLength_, deckB_.variation);
+    }
+    float getFillIntensity() const { return fillSettings_.intensity; }
+
+    const FillSettings& getFillSettings() const { return fillSettings_; }
 
     void notifyBarStart(int barNumber) {
         // 每 N bars 觸發 Fill
-        if (fillInterval_ > 0 && barNumber > 0 && (barNumber % fillInterval_) == (fillInterval_ - 1)) {
+        int interval = fillSettings_.interval;
+        if (interval > 0 && barNumber > 0 && (barNumber % interval) == (interval - 1)) {
             fillActive_ = true;
-            fillStepsRemaining_ = patternLength_;
+            // Fill 長度根據 intensity 決定（2-14 steps）
+            fillStepsRemaining_ = fillSettings_.getLength();
         }
     }
 
@@ -834,7 +876,7 @@ private:
     float roleDensities_[NUM_ROLES] = {0.4f, 0.2f, 0.5f, 0.5f};
 
     // Fill 狀態
-    int fillInterval_ = 4;
+    FillSettings fillSettings_;
     bool fillActive_ = false;
     int fillStepsRemaining_ = 0;
 
@@ -943,16 +985,54 @@ private:
 
     /**
      * 為指定 Deck 生成 Fill Pattern
+     * 使用 FillSettings 控制複雜度與密度
+     *
+     * Complexity 決定參與的角色數量：
+     * 1 = Timeline only
+     * 2 = Timeline + Foundation
+     * 3 = Timeline + Foundation + Groove
+     * 4 = All roles
      */
     void generateDeckFillPattern(Deck& deck, int length, float variation) {
-        deck.fillPatterns = generator_.generate(length, variation + 0.2f, roleDensities_);
+        // 取得 fill 設定
+        int complexity = fillSettings_.getComplexity();     // 1-4
+        float fillDensity = fillSettings_.getDensity();     // 0.4-0.9
+        float accentProb = fillSettings_.getAccentProbability();
 
-        std::uniform_real_distribution<float> velDist(0.7f, 1.0f);
+        // 建立 fill 專用的 density 陣列
+        float fillDensities[NUM_ROLES];
+        for (int r = 0; r < NUM_ROLES; r++) {
+            // 根據 complexity 決定角色是否參與
+            // Role 順序: TIMELINE=0, FOUNDATION=1, GROOVE=2, LEAD=3
+            if (r < complexity) {
+                // 參與 fill 的角色使用較高密度
+                fillDensities[r] = fillDensity;
+            } else {
+                // 不參與的角色維持基礎節奏
+                fillDensities[r] = roleDensities_[r] * 0.3f;
+            }
+        }
+
+        // 生成 fill patterns
+        deck.fillPatterns = generator_.generate(length, variation + 0.2f, fillDensities);
+
+        // 套用 velocity 和 accent
+        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        std::uniform_real_distribution<float> velDist(0.7f, 0.95f);
+        std::uniform_real_distribution<float> accentVelDist(0.95f, 1.0f);
+
         for (int v = 0; v < NUM_VOICES; v++) {
+            int role = v / 2;
             Pattern& fill = deck.fillPatterns.patterns[v];
+
             for (int i = 0; i < fill.length; i++) {
                 if (fill.hasOnset(i)) {
-                    fill.setOnset(i, velDist(rng_));
+                    // 決定是否為 accent hit
+                    if (role < complexity && dist(rng_) < accentProb) {
+                        fill.setOnset(i, accentVelDist(rng_));
+                    } else {
+                        fill.setOnset(i, velDist(rng_));
+                    }
                 }
             }
         }

@@ -84,6 +84,16 @@ bool AudioEngine::isFillActive() const
     return patternEngine_.isFillActive();
 }
 
+void AudioEngine::setFillIntensity(float intensity)
+{
+    patternEngine_.setFillIntensity(intensity);
+}
+
+float AudioEngine::getFillIntensity() const
+{
+    return patternEngine_.getFillIntensity();
+}
+
 // === Density 控制 ===
 
 void AudioEngine::setDensity(TechnoMachine::Role role, float density)

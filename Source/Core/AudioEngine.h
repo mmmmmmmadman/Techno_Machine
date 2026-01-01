@@ -27,6 +27,8 @@ public:
     // Fill 控制
     void setFillInterval(int bars);
     int getFillInterval() const;
+    void setFillIntensity(float intensity);
+    float getFillIntensity() const;
     bool isFillActive() const;
 
     // Density 控制（生成時使用）

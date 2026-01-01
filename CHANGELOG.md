@@ -1,5 +1,25 @@
 # Techno Machine - Changelog
 
+## [0.3.0] - 2026-01-01
+
+### New Features
+- Enhanced Fill System with intensity-based control
+  - Fill Intensity slider (0-100%) controls all fill parameters
+  - Length: 2-14 steps based on intensity
+  - Complexity: 1-4 roles participate (Timeline → Foundation → Groove → Lead)
+  - Density: 0.4-0.9 fill pattern density
+  - Accent probability: High intensity adds accent hits
+- Swing from style profile (auto-syncs when crossfader moves or deck loads)
+
+### UI
+- Fill Intensity slider next to Global Density
+
+### Technical
+- FillSettings struct with intensity-derived parameters
+- TechnoPatternEngine integrates FillSettings for fill generation
+
+---
+
 ## [0.2.0] - 2025-01-01
 
 ### New Features
