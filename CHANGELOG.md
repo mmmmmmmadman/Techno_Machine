@@ -1,5 +1,24 @@
 # Techno Machine - Changelog
 
+## [0.2.0] - 2025-01-01
+
+### New Features
+- CV output routing (24 signals: 8 voices × Trigger/Pitch/Velocity)
+- Audio device selection via Settings window
+- Settings persistence (CV routing and audio device saved on exit)
+
+### UI
+- Settings window with tabbed interface (Audio Device / CV Routing)
+- Settings button in main window toolbar
+- Compact CV routing panel organized by Role
+
+### Technical
+- Migrated from AudioAppComponent to AudioIODeviceCallback for multi-channel support
+- CVOutputRouter class with 1V/Oct pitch CV conversion
+- ApplicationProperties for settings persistence
+
+---
+
 ## [0.1.0] - 2024-12-31
 
 ### Core Features
@@ -71,6 +90,8 @@ TechnoMachine/
 
 ## Planned Features
 
+- [x] CV output routing
+- [x] Audio device selection
 - [ ] Euclidean sequencer
 - [ ] Conditional triggers (Elektron-style)
 - [ ] Section management (Intro/Build/Drop/Breakdown)
