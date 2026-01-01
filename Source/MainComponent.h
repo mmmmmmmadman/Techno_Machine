@@ -126,6 +126,13 @@ private:
     // Audio Device selector
     juce::ComboBox audioDeviceSelector_;
 
+    // Sample panel (bottom-right) - 8 voices (2 per role)
+    juce::Label samplePanelLabel_{"", "SAMPLES"};
+    juce::Label sampleVoiceGroupLabels_[2];  // Primary, Secondary
+    juce::Label sampleRoleLabels_[4];        // Timeline, Foundation, Groove, Lead
+    juce::Label sampleNameLabels_[8];        // Display loaded sample names (8 voices)
+    juce::TextButton sampleLoadButtons_[8];  // Load buttons (8 voices)
+
     // Application settings persistence
     juce::ApplicationProperties appProperties_;
 
@@ -137,6 +144,8 @@ private:
     void loadSettings();
     void saveSettings();
     void syncSwingFromStyle();
+    void loadSampleForVoice(int voiceIdx);
+    void updateSampleDisplay();
 
     int swingLevel_ = 1;  // default swing level 1
     float globalDensityOffset_ = 0.0f;
@@ -157,6 +166,9 @@ private:
     // Colors for button flash - vibrant pink
     juce::Colour btnBgColor_{0xff201a1a};
     juce::Colour btnFlashColor_{0xffff9eb0};
+
+    // File chooser for sample loading (must persist for async operation)
+    std::unique_ptr<juce::FileChooser> sampleFileChooser_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <random>
 #include "../Synthesis/MinimalDrumSynth.h"
+#include "../Synthesis/SampleEngine.h"
 #include "../Sequencer/TechnoPattern.h"
 #include "../Arrangement/TransitionEngine.hpp"
 
@@ -73,6 +74,14 @@ public:
     TechnoMachine::MinimalDrumSynth& drums() { return drums_; }
     TechnoMachine::TechnoPatternEngine& patternEngine() { return patternEngine_; }
     TechnoMachine::TransitionEngine& transitionEngine() { return transitionEngine_; }
+    TechnoMachine::SampleEngine& sampleEngine() { return sampleEngine_; }
+
+    // Sample 控制 (voiceIdx = 0-7)
+    bool loadSample(int voiceIdx, const juce::File& file);
+    void clearSample(int voiceIdx);
+    bool hasSample(int voiceIdx) const;
+    juce::String getSampleName(int voiceIdx) const;
+    juce::String getSamplePath(int voiceIdx) const;
 
     // CV 輸出支援：觸發追蹤
     bool wasVoiceTriggered(int voiceIdx) const;
@@ -84,6 +93,7 @@ private:
     int samplesPerBlock_ = 256;
 
     TechnoMachine::MinimalDrumSynth drums_;
+    TechnoMachine::SampleEngine sampleEngine_;
     TechnoMachine::TechnoPatternEngine patternEngine_;
     TechnoMachine::TransitionEngine transitionEngine_;
 

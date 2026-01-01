@@ -387,6 +387,51 @@ MainComponent::MainComponent()
         addAndMakeVisible(cvRouteBoxes_[i]);
     }
 
+    // === Sample Panel (bottom-right) - 8 voices ===
+    samplePanelLabel_.setFont(juce::Font(thinTypeface_).withHeight(11.0f));
+    samplePanelLabel_.setColour(juce::Label::textColourId, accentDim);
+    addAndMakeVisible(samplePanelLabel_);
+
+    // Voice group labels (Primary, Secondary)
+    const char* sampleVoiceGroupNames[] = {"Primary", "Secondary"};
+    for (int g = 0; g < 2; g++) {
+        sampleVoiceGroupLabels_[g].setText(sampleVoiceGroupNames[g], juce::dontSendNotification);
+        sampleVoiceGroupLabels_[g].setFont(juce::Font(thinTypeface_).withHeight(10.0f));
+        sampleVoiceGroupLabels_[g].setColour(juce::Label::textColourId, textDim);
+        sampleVoiceGroupLabels_[g].setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(sampleVoiceGroupLabels_[g]);
+    }
+
+    const char* sampleRoleNames[] = {"Timeline", "Foundation", "Groove", "Lead"};
+    for (int r = 0; r < 4; r++) {
+        // Role label
+        sampleRoleLabels_[r].setText(sampleRoleNames[r], juce::dontSendNotification);
+        sampleRoleLabels_[r].setFont(juce::Font(thinTypeface_).withHeight(11.0f));
+        sampleRoleLabels_[r].setColour(juce::Label::textColourId, textDim);
+        addAndMakeVisible(sampleRoleLabels_[r]);
+    }
+
+    // 8 sample slots (2 per role)
+    for (int v = 0; v < 8; v++) {
+        // Sample name display
+        sampleNameLabels_[v].setText("-", juce::dontSendNotification);
+        sampleNameLabels_[v].setFont(juce::Font(thinTypeface_).withHeight(10.0f));
+        sampleNameLabels_[v].setColour(juce::Label::textColourId, textLight);
+        sampleNameLabels_[v].setColour(juce::Label::backgroundColourId, bgMid);
+        sampleNameLabels_[v].setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(sampleNameLabels_[v]);
+
+        // Load button
+        sampleLoadButtons_[v].setButtonText("...");
+        sampleLoadButtons_[v].setColour(juce::TextButton::buttonColourId, bgMid);
+        sampleLoadButtons_[v].setColour(juce::TextButton::textColourOffId, accent);
+        int voiceIdx = v;
+        sampleLoadButtons_[v].onClick = [this, voiceIdx] {
+            loadSampleForVoice(voiceIdx);
+        };
+        addAndMakeVisible(sampleLoadButtons_[v]);
+    }
+
     // Status label
     statusLabel_.setJustificationType(juce::Justification::centred);
     statusLabel_.setFont(juce::Font(thinTypeface_).withHeight(16.0f));
@@ -641,6 +686,38 @@ void MainComponent::resized()
             cvRouteBoxes_[boxIdx].setBounds(boxX, rowY, boxW, boxH);
         }
     }
+
+    // === Sample Panel (bottom-right) - 8 voices ===
+    // Align with CV routing Trigger dropdown (X=645)
+    int sampleX = cvX + roleLabelW;  // Align with first dropdown column
+    int sampleY = getHeight() - 130;
+    int sampleRowH = 22;
+    int sampleRoleLabelW = 65;
+    int sampleNameW = 70;   // Narrower filename display
+    int sampleLoadW = 22;
+    int sampleGap = 2;
+    int sampleColW = sampleNameW + sampleGap + sampleLoadW;  // Width per voice column
+    int sampleColGap = 8;  // Gap between Primary and Secondary columns
+
+    samplePanelLabel_.setBounds(sampleX, sampleY, 200, 14);
+
+    // Voice group headers (Primary, Secondary)
+    int sampleHeaderY = sampleY + 14;
+    sampleVoiceGroupLabels_[0].setBounds(sampleX + sampleRoleLabelW, sampleHeaderY, sampleColW, 12);
+    sampleVoiceGroupLabels_[1].setBounds(sampleX + sampleRoleLabelW + sampleColW + sampleColGap, sampleHeaderY, sampleColW, 12);
+
+    // 4 roles × 2 voices
+    for (int r = 0; r < 4; r++) {
+        int rowY = sampleY + 28 + r * sampleRowH;
+        sampleRoleLabels_[r].setBounds(sampleX, rowY, sampleRoleLabelW, sampleRowH);
+
+        for (int v = 0; v < 2; v++) {
+            int voiceIdx = r * 2 + v;
+            int colX = sampleX + sampleRoleLabelW + v * (sampleColW + sampleColGap);
+            sampleNameLabels_[voiceIdx].setBounds(colX, rowY, sampleNameW, sampleRowH - 2);
+            sampleLoadButtons_[voiceIdx].setBounds(colX + sampleNameW + sampleGap, rowY, sampleLoadW, sampleRowH - 2);
+        }
+    }
 }
 
 void MainComponent::timerCallback()
@@ -756,6 +833,19 @@ void MainComponent::loadSettings()
         if (savedState != nullptr) {
             deviceManager_.initialise(0, 32, savedState.get(), true);
         }
+
+        // Load sample paths (8 voices: 2 per role)
+        for (int v = 0; v < 8; v++) {
+            juce::String key = "samplePath" + juce::String(v);
+            juce::String path = props->getValue(key, "");
+            if (path.isNotEmpty()) {
+                juce::File file(path);
+                if (file.existsAsFile()) {
+                    audioEngine_.loadSample(v, file);
+                }
+            }
+        }
+        updateSampleDisplay();
     }
 }
 
@@ -769,6 +859,13 @@ void MainComponent::saveSettings()
         auto state = deviceManager_.createStateXml();
         if (state != nullptr) {
             props->setValue("audioDeviceState", state.get());
+        }
+
+        // Save sample paths (8 voices: 2 per role)
+        for (int v = 0; v < 8; v++) {
+            juce::String key = "samplePath" + juce::String(v);
+            juce::String path = audioEngine_.getSamplePath(v);
+            props->setValue(key, path);
         }
 
         props->saveIfNeeded();
@@ -872,5 +969,48 @@ void MainComponent::updateBuildup()
     if (progress >= 1.0f) {
         // Keep at max values until button released
         buildButton_.setButtonText("DROP!");
+    }
+}
+
+void MainComponent::loadSampleForVoice(int voiceIdx)
+{
+    const char* roleNames[] = {"Timeline", "Foundation", "Groove", "Lead"};
+    int role = voiceIdx / 2;
+    int voiceInRole = voiceIdx % 2;
+    juce::String voiceType = (voiceInRole == 0) ? "Primary" : "Secondary";
+
+    sampleFileChooser_ = std::make_unique<juce::FileChooser>(
+        "Select Sample for " + juce::String(roleNames[role]) + " " + voiceType,
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+        "*.wav;*.aiff;*.WAV;*.AIFF"
+    );
+
+    auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    sampleFileChooser_->launchAsync(flags, [this, voiceIdx](const juce::FileChooser& chooser) {
+        auto file = chooser.getResult();
+        if (file.existsAsFile()) {
+            if (audioEngine_.loadSample(voiceIdx, file)) {
+                updateSampleDisplay();
+                // Save sample paths
+                saveSettings();
+            }
+        }
+    });
+}
+
+void MainComponent::updateSampleDisplay()
+{
+    for (int v = 0; v < 8; v++) {
+        if (audioEngine_.hasSample(v)) {
+            // Truncate filename to fit
+            juce::String name = audioEngine_.getSampleName(v);
+            if (name.length() > 10) {
+                name = name.substring(0, 8) + "..";
+            }
+            sampleNameLabels_[v].setText(name, juce::dontSendNotification);
+        } else {
+            sampleNameLabels_[v].setText("-", juce::dontSendNotification);
+        }
     }
 }

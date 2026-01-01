@@ -15,6 +15,7 @@ void AudioEngine::prepare(double sampleRate, int samplesPerBlock)
     samplesPerBlock_ = samplesPerBlock;
 
     drums_.setSampleRate(static_cast<float>(sampleRate));
+    sampleEngine_.prepare(sampleRate);
 
     // 套用 Techno 預設音色（8 聲道）
     drums_.applyTechnoPreset();
@@ -226,7 +227,13 @@ void AudioEngine::processStep(int step)
 
             // density = 1.0 時全部播放，density = 0.0 時全部靜音
             if (density >= 1.0f || dist(densityRng_) < density) {
+                // 如果此 voice 有 sample 則觸發 sample
+                if (sampleEngine_.hasSample(v)) {
+                    sampleEngine_.triggerVoice(v, decision.velocity);
+                }
+                // 同時觸發合成器（可疊加）
                 drums_.triggerVoice(v, decision.velocity);
+
                 // 設定 CV 觸發旗標
                 voiceTriggered_[v] = true;
                 lastVelocity_[v] = decision.velocity;
@@ -328,9 +335,17 @@ AudioEngine::StereoOutput AudioEngine::process(const Transport& transport)
         lastStep_ = currentStep;
     }
 
-    // Process all drum voices and return stereo output
-    auto output = drums_.process();
-    return { output.left, output.right };
+    // Process all drum voices
+    auto synthOutput = drums_.process();
+
+    // Process samples
+    auto sampleOutput = sampleEngine_.process();
+
+    // Mix synth + samples
+    return {
+        synthOutput.left + sampleOutput.left,
+        synthOutput.right + sampleOutput.right
+    };
 }
 
 // === CV 輸出支援 ===
@@ -352,4 +367,31 @@ void AudioEngine::clearTriggerFlags()
     for (int i = 0; i < TechnoMachine::NUM_VOICES; i++) {
         voiceTriggered_[i] = false;
     }
+}
+
+// === Sample 控制 ===
+
+bool AudioEngine::loadSample(int voiceIdx, const juce::File& file)
+{
+    return sampleEngine_.loadSample(voiceIdx, file);
+}
+
+void AudioEngine::clearSample(int voiceIdx)
+{
+    sampleEngine_.clearSample(voiceIdx);
+}
+
+bool AudioEngine::hasSample(int voiceIdx) const
+{
+    return sampleEngine_.hasSample(voiceIdx);
+}
+
+juce::String AudioEngine::getSampleName(int voiceIdx) const
+{
+    return sampleEngine_.getSampleName(voiceIdx);
+}
+
+juce::String AudioEngine::getSamplePath(int voiceIdx) const
+{
+    return sampleEngine_.getSamplePath(voiceIdx);
 }
