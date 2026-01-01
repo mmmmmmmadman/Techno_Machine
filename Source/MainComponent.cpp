@@ -394,12 +394,14 @@ MainComponent::MainComponent()
     addAndMakeVisible(statusLabel_);
 
     transport_.setTempo(132.0);  // Default 132 BPM
-    transport_.setSwingLevel(swingLevel_);  // Apply default swing level 1
-    // Update swing button text to match default level
-    const char* swingLabels[] = {"Swing: Off", "Swing: 1", "Swing: 2", "Swing: 3"};
-    swingButton_.setButtonText(swingLabels[swingLevel_]);
+
     updateDJInfo();
     applyGlobalDensity();  // Apply initial densities
+
+    // Set default swing AFTER all initialization to prevent overwriting
+    transport_.setSwingLevel(swingLevel_);
+    const char* swingLabels[] = {"Swing: Off", "Swing: 1", "Swing: 2", "Swing: 3"};
+    swingButton_.setButtonText(swingLabels[swingLevel_]);
 
     startTimerHz(30);
     updateUI();
@@ -829,7 +831,9 @@ void MainComponent::updateBuildup()
 
     // Calculate progress (0.0 to 1.0) with sub-bar precision
     int currentBar = transport_.getCurrentBar();
-    float barFraction = transport_.getCurrentSixteenth() / 16.0f;  // 0-1 within bar
+    // getCurrentBeat() = 0-3, getCurrentSixteenth() = 0-3 within beat
+    int sixteenthInBar = transport_.getCurrentBeat() * 4 + transport_.getCurrentSixteenth();
+    float barFraction = sixteenthInBar / 16.0f;  // 0-1 within bar
     float elapsedBars = static_cast<float>(currentBar - buildupStartBar_) + barFraction;
     float progress = elapsedBars / static_cast<float>(buildupDurationBars_);
     progress = std::clamp(progress, 0.0f, 1.0f);
