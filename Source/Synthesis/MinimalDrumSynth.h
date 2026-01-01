@@ -22,6 +22,11 @@
 #include <cmath>
 #include <random>
 
+// MSVC compatibility
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 namespace TechnoMachine {
 
 // 合成器模式
