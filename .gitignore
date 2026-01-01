@@ -18,3 +18,7 @@ JUCE/
 # Temporary
 *.tmp
 *.log
+
+# Distribution
+*.zip
+*.dmg
