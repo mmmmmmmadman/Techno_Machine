@@ -1,5 +1,27 @@
 # Techno Machine - Changelog
 
+## [0.3.3] - 2026-01-01
+
+### New Features
+- Sample Import functionality
+  - 8 sample slots (2 per role: Primary + Secondary)
+  - WAV/AIFF format support with automatic sample rate conversion
+  - Samples trigger alongside synth voices for layering
+  - Per-role panning: Timeline=L, Foundation/Groove=C, Lead=R
+  - Sample paths persist across app restarts
+
+### UI
+- Sample panel in bottom-right corner
+- Primary/Secondary column layout per role
+- Load buttons with filename display
+
+### Technical
+- SampleVoice class for single sample playback
+- SampleEngine manages 8 sample slots
+- Integrated into AudioEngine process chain
+
+---
+
 ## [0.3.2] - 2026-01-01
 
 ### New Features
@@ -156,6 +178,7 @@ TechnoMachine/
 - [x] Swing from style profile
 - [x] Markov chain sequencer
 - [x] Enhanced fill system (length/complexity/density control)
+- [x] Sample import (WAV/AIFF per voice)
 - [ ] Conditional triggers (Elektron-style)
 - [ ] Parameter locking
 - [ ] Section management (Intro/Build/Drop/Breakdown)

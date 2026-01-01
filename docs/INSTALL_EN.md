@@ -55,7 +55,14 @@ Visit [GitHub Releases](https://github.com/mmmmmmmadman/Techno_Machine/releases)
 
 ---
 
-## Features (v0.3.2)
+## Features (v0.3.3)
+
+### Sample Import
+- Load WAV/AIFF samples for each voice (8 slots total)
+- 2 samples per role: Primary and Secondary
+- Samples play alongside synth for layering
+- Automatic sample rate conversion
+- Sample paths saved between sessions
 
 ### Markov Chain Sequencer
 - Adds organic variation to rhythm patterns

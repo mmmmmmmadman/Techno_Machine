@@ -13,6 +13,7 @@ Visit [Releases](https://github.com/mmmmmmmadman/Techno_Machine/releases) to dow
 ## Features
 
 - **Drum Synthesis**: 4-role system (Timeline/Foundation/Groove/Lead) with 8 voices
+- **Sample Import**: Load WAV/AIFF samples per voice (8 slots) with synth layering
 - **DJ Set Mode**: Dual deck architecture with crossfader
 - **Markov Chain Sequencer**: Organic rhythm variation controlled by Density
 - **Build-up Automation**: Hold-to-build DJ-style tension control
