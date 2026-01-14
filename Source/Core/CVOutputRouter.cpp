@@ -112,15 +112,15 @@ void CVOutputRouter::process(float* const* outputChannelData, int numOutputChann
 void CVOutputRouter::setDefaultRouting(int numAvailableChannels)
 {
     // Channels 0-1 are stereo audio, so CV starts at channel 2
-    // Default layout:
-    // Ch 2-9: Triggers (Voice 0-7)
-    // Ch 10-17: Pitch (Voice 0-7)
-    // Ch 18-25: Velocity (Voice 0-7)
+    // Default layout (4 voices):
+    // Ch 2-5: Triggers (Voice 0-3)
+    // Ch 6-9: Pitch (Voice 0-3)
+    // Ch 10-13: Velocity (Voice 0-3)
 
     for (int voice = 0; voice < NUM_VOICES; ++voice) {
         int triggerCh = 2 + voice;
-        int pitchCh = 10 + voice;
-        int velCh = 18 + voice;
+        int pitchCh = 6 + voice;
+        int velCh = 10 + voice;
 
         setRoute(getSignalIndex(voice, CVType::TRIGGER),
                  triggerCh < numAvailableChannels ? triggerCh : CHANNEL_OFF);

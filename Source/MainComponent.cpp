@@ -286,19 +286,9 @@ MainComponent::MainComponent()
     }
 
     // === Inline CV Routing ===
-    // Voice group labels (Primary, Secondary)
-    const char* voiceGroupNames[] = {"Primary", "Secondary"};
-    for (int g = 0; g < 2; g++) {
-        cvVoiceGroupLabels_[g].setText(voiceGroupNames[g], juce::dontSendNotification);
-        cvVoiceGroupLabels_[g].setFont(juce::Font(thinTypeface_).withHeight(11.0f));
-        cvVoiceGroupLabels_[g].setColour(juce::Label::textColourId, textDim);
-        cvVoiceGroupLabels_[g].setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(cvVoiceGroupLabels_[g]);
-    }
-
-    // Column headers (Trigger, Pitch, Velocity × 2 voice groups)
-    const char* colNames[] = {"Trigger", "Pitch", "Velocity", "Trigger", "Pitch", "Velocity"};
-    for (int c = 0; c < 6; c++) {
+    // Column headers (Trigger, Pitch, Velocity)
+    const char* colNames[] = {"Trigger", "Pitch", "Velocity"};
+    for (int c = 0; c < 3; c++) {
         cvColHeaders_[c].setText(colNames[c], juce::dontSendNotification);
         cvColHeaders_[c].setFont(juce::Font(thinTypeface_).withHeight(10.0f));
         cvColHeaders_[c].setColour(juce::Label::textColourId, accentDim);
@@ -358,10 +348,10 @@ MainComponent::MainComponent()
         }
     }
 
-    // 24 ComboBoxes: 4 roles × 2 voices × 3 signals (Trig/Pitch/Vel)
-    for (int i = 0; i < 24; i++) {
+    // 12 ComboBoxes: 4 roles × 3 signals (Trig/Pitch/Vel)
+    for (int i = 0; i < 12; i++) {
         cvRouteBoxes_[i].addItem("...", 1);  // Off
-        for (int ch = 2; ch <= 25; ch++) {
+        for (int ch = 2; ch <= 13; ch++) {
             cvRouteBoxes_[i].addItem(juce::String(ch), ch);
         }
         cvRouteBoxes_[i].setSelectedId(1);  // Default off
@@ -372,35 +362,23 @@ MainComponent::MainComponent()
 
         int boxIdx = i;
         cvRouteBoxes_[i].onChange = [this, boxIdx] {
-            int role = boxIdx / 6;
-            int voiceInRole = (boxIdx % 6) / 3;
+            int role = boxIdx / 3;
             int signalType = boxIdx % 3;  // 0=Trig, 1=Pitch, 2=Vel
-            int voice = role * 2 + voiceInRole;
 
             int selectedId = cvRouteBoxes_[boxIdx].getSelectedId();
             int channel = (selectedId == 1) ? -1 : selectedId;  // -1 = off
 
             int signalIdx = TechnoMachine::CVOutputRouter::getSignalIndex(
-                voice, static_cast<TechnoMachine::CVType>(signalType));
+                role, static_cast<TechnoMachine::CVType>(signalType));
             cvRouter_.setRoute(signalIdx, channel);
         };
         addAndMakeVisible(cvRouteBoxes_[i]);
     }
 
-    // === Sample Panel (bottom-right) - 8 voices ===
+    // === Sample Panel (bottom-right) - 4 voices (1 per role) ===
     samplePanelLabel_.setFont(juce::Font(thinTypeface_).withHeight(11.0f));
     samplePanelLabel_.setColour(juce::Label::textColourId, accentDim);
     addAndMakeVisible(samplePanelLabel_);
-
-    // Voice group labels (Primary, Secondary)
-    const char* sampleVoiceGroupNames[] = {"Primary", "Secondary"};
-    for (int g = 0; g < 2; g++) {
-        sampleVoiceGroupLabels_[g].setText(sampleVoiceGroupNames[g], juce::dontSendNotification);
-        sampleVoiceGroupLabels_[g].setFont(juce::Font(thinTypeface_).withHeight(10.0f));
-        sampleVoiceGroupLabels_[g].setColour(juce::Label::textColourId, textDim);
-        sampleVoiceGroupLabels_[g].setJustificationType(juce::Justification::centred);
-        addAndMakeVisible(sampleVoiceGroupLabels_[g]);
-    }
 
     const char* sampleRoleNames[] = {"Timeline", "Foundation", "Groove", "Lead"};
     for (int r = 0; r < 4; r++) {
@@ -411,8 +389,8 @@ MainComponent::MainComponent()
         addAndMakeVisible(sampleRoleLabels_[r]);
     }
 
-    // 8 sample slots (2 per role)
-    for (int v = 0; v < 8; v++) {
+    // 4 sample slots (1 per role)
+    for (int v = 0; v < 4; v++) {
         // Sample name display
         sampleNameLabels_[v].setText("-", juce::dontSendNotification);
         sampleNameLabels_[v].setFont(juce::Font(thinTypeface_).withHeight(10.0f));
@@ -653,70 +631,49 @@ void MainComponent::resized()
     int boxGap = 4; // Gap between boxes
     int rowH = 24;  // Row height
     int roleLabelW = 85;
-    int voiceGap = 14;  // Extra gap between V1 and V2 groups
-    int groupW = 3 * (boxW + boxGap) - boxGap;  // Width of one voice group
 
-    // Voice group labels row (Primary, Secondary)
-    int groupLabelY = cvY;
-    int group1X = cvX + roleLabelW;
-    int group2X = cvX + roleLabelW + 3 * (boxW + boxGap) + voiceGap;
-    cvVoiceGroupLabels_[0].setBounds(group1X, groupLabelY, groupW, 14);
-    cvVoiceGroupLabels_[1].setBounds(group2X, groupLabelY, groupW, 14);
-
-    // Column headers row (Trigger, Pitch, Velocity × 2)
-    int headerY = cvY + 14;
-    for (int c = 0; c < 6; c++) {
-        int extraGap = (c >= 3) ? voiceGap : 0;
-        int headerX = cvX + roleLabelW + c * (boxW + boxGap) + extraGap;
+    // Column headers row (Trigger, Pitch, Velocity)
+    int headerY = cvY;
+    for (int c = 0; c < 3; c++) {
+        int headerX = cvX + roleLabelW + c * (boxW + boxGap);
         cvColHeaders_[c].setBounds(headerX, headerY, boxW, 14);
     }
 
     // Data rows start below headers
-    int dataY = cvY + 30;
+    int dataY = cvY + 16;
 
-    // Layout: 4 rows (roles) × 6 ComboBoxes (V1:Trig/Pitch/Vel, V2:Trig/Pitch/Vel)
+    // Layout: 4 rows (roles) × 3 ComboBoxes (Trig/Pitch/Vel)
     for (int r = 0; r < 4; r++) {
         int rowY = dataY + r * rowH;
         cvRoleLabels_[r].setBounds(cvX, rowY, roleLabelW, boxH);
 
-        for (int b = 0; b < 6; b++) {
-            int boxIdx = r * 6 + b;
-            int extraGap = (b >= 3) ? voiceGap : 0;  // Add gap between V1 and V2
-            int boxX = cvX + roleLabelW + b * (boxW + boxGap) + extraGap;
+        for (int b = 0; b < 3; b++) {
+            int boxIdx = r * 3 + b;
+            int boxX = cvX + roleLabelW + b * (boxW + boxGap);
             cvRouteBoxes_[boxIdx].setBounds(boxX, rowY, boxW, boxH);
         }
     }
 
-    // === Sample Panel (bottom-right) - 8 voices ===
+    // === Sample Panel (bottom-right) - 4 voices (1 per role) ===
     // Align with CV routing Trigger dropdown (X=645)
     int sampleX = cvX + roleLabelW;  // Align with first dropdown column
-    int sampleY = getHeight() - 130;
+    int sampleY = getHeight() - 110;
     int sampleRowH = 22;
     int sampleRoleLabelW = 65;
-    int sampleNameW = 70;   // Narrower filename display
+    int sampleNameW = 90;   // Wider filename display (single column)
     int sampleLoadW = 22;
     int sampleGap = 2;
-    int sampleColW = sampleNameW + sampleGap + sampleLoadW;  // Width per voice column
-    int sampleColGap = 8;  // Gap between Primary and Secondary columns
 
     samplePanelLabel_.setBounds(sampleX, sampleY, 200, 14);
 
-    // Voice group headers (Primary, Secondary)
-    int sampleHeaderY = sampleY + 14;
-    sampleVoiceGroupLabels_[0].setBounds(sampleX + sampleRoleLabelW, sampleHeaderY, sampleColW, 12);
-    sampleVoiceGroupLabels_[1].setBounds(sampleX + sampleRoleLabelW + sampleColW + sampleColGap, sampleHeaderY, sampleColW, 12);
-
-    // 4 roles × 2 voices
+    // 4 roles × 1 voice each
     for (int r = 0; r < 4; r++) {
-        int rowY = sampleY + 28 + r * sampleRowH;
+        int rowY = sampleY + 16 + r * sampleRowH;
         sampleRoleLabels_[r].setBounds(sampleX, rowY, sampleRoleLabelW, sampleRowH);
 
-        for (int v = 0; v < 2; v++) {
-            int voiceIdx = r * 2 + v;
-            int colX = sampleX + sampleRoleLabelW + v * (sampleColW + sampleColGap);
-            sampleNameLabels_[voiceIdx].setBounds(colX, rowY, sampleNameW, sampleRowH - 2);
-            sampleLoadButtons_[voiceIdx].setBounds(colX + sampleNameW + sampleGap, rowY, sampleLoadW, sampleRowH - 2);
-        }
+        int colX = sampleX + sampleRoleLabelW;
+        sampleNameLabels_[r].setBounds(colX, rowY, sampleNameW, sampleRowH - 2);
+        sampleLoadButtons_[r].setBounds(colX + sampleNameW + sampleGap, rowY, sampleLoadW, sampleRowH - 2);
     }
 }
 
@@ -809,20 +766,17 @@ void MainComponent::loadSettings()
         if (cvState.isNotEmpty()) {
             cvRouter_.setStateFromString(cvState);
 
-            // Sync inline ComboBoxes with loaded state
+            // Sync inline ComboBoxes with loaded state (4 roles × 3 signals)
             for (int r = 0; r < 4; r++) {
-                for (int v = 0; v < 2; v++) {
-                    int voice = r * 2 + v;
-                    for (int s = 0; s < 3; s++) {
-                        int boxIdx = r * 6 + v * 3 + s;
-                        int signalIdx = TechnoMachine::CVOutputRouter::getSignalIndex(
-                            voice, static_cast<TechnoMachine::CVType>(s));
-                        int channel = cvRouter_.getRoute(signalIdx);
-                        if (channel < 0) {
-                            cvRouteBoxes_[boxIdx].setSelectedId(1, juce::dontSendNotification);
-                        } else {
-                            cvRouteBoxes_[boxIdx].setSelectedId(channel, juce::dontSendNotification);
-                        }
+                for (int s = 0; s < 3; s++) {
+                    int boxIdx = r * 3 + s;
+                    int signalIdx = TechnoMachine::CVOutputRouter::getSignalIndex(
+                        r, static_cast<TechnoMachine::CVType>(s));
+                    int channel = cvRouter_.getRoute(signalIdx);
+                    if (channel < 0) {
+                        cvRouteBoxes_[boxIdx].setSelectedId(1, juce::dontSendNotification);
+                    } else {
+                        cvRouteBoxes_[boxIdx].setSelectedId(channel, juce::dontSendNotification);
                     }
                 }
             }
@@ -834,8 +788,8 @@ void MainComponent::loadSettings()
             deviceManager_.initialise(0, 32, savedState.get(), true);
         }
 
-        // Load sample paths (8 voices: 2 per role)
-        for (int v = 0; v < 8; v++) {
+        // Load sample paths (4 voices: 1 per role)
+        for (int v = 0; v < 4; v++) {
             juce::String key = "samplePath" + juce::String(v);
             juce::String path = props->getValue(key, "");
             if (path.isNotEmpty()) {
@@ -861,8 +815,8 @@ void MainComponent::saveSettings()
             props->setValue("audioDeviceState", state.get());
         }
 
-        // Save sample paths (8 voices: 2 per role)
-        for (int v = 0; v < 8; v++) {
+        // Save sample paths (4 voices: 1 per role)
+        for (int v = 0; v < 4; v++) {
             juce::String key = "samplePath" + juce::String(v);
             juce::String path = audioEngine_.getSamplePath(v);
             props->setValue(key, path);
@@ -975,12 +929,9 @@ void MainComponent::updateBuildup()
 void MainComponent::loadSampleForVoice(int voiceIdx)
 {
     const char* roleNames[] = {"Timeline", "Foundation", "Groove", "Lead"};
-    int role = voiceIdx / 2;
-    int voiceInRole = voiceIdx % 2;
-    juce::String voiceType = (voiceInRole == 0) ? "Primary" : "Secondary";
 
     sampleFileChooser_ = std::make_unique<juce::FileChooser>(
-        "Select Sample for " + juce::String(roleNames[role]) + " " + voiceType,
+        "Select Sample for " + juce::String(roleNames[voiceIdx]),
         juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
         "*.wav;*.aiff;*.WAV;*.AIFF"
     );
@@ -1001,12 +952,12 @@ void MainComponent::loadSampleForVoice(int voiceIdx)
 
 void MainComponent::updateSampleDisplay()
 {
-    for (int v = 0; v < 8; v++) {
+    for (int v = 0; v < 4; v++) {
         if (audioEngine_.hasSample(v)) {
             // Truncate filename to fit
             juce::String name = audioEngine_.getSampleName(v);
-            if (name.length() > 10) {
-                name = name.substring(0, 8) + "..";
+            if (name.length() > 12) {
+                name = name.substring(0, 10) + "..";
             }
             sampleNameLabels_[v].setText(name, juce::dontSendNotification);
         } else {

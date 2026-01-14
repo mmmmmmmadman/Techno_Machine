@@ -117,21 +117,19 @@ private:
     // Status
     juce::Label statusLabel_;
 
-    // Inline CV Routing (4 roles × 2 voices × 3 signals = 24 ComboBoxes)
-    juce::ComboBox cvRouteBoxes_[24];
+    // Inline CV Routing (4 roles × 3 signals = 12 ComboBoxes)
+    juce::ComboBox cvRouteBoxes_[12];
     juce::Label cvRoleLabels_[4];  // TIMELINE, FOUNDATION, GROOVE, LEAD
-    juce::Label cvColHeaders_[6];  // Trigger, Pitch, Velocity × 2
-    juce::Label cvVoiceGroupLabels_[2];  // Primary, Secondary
+    juce::Label cvColHeaders_[3];  // Trigger, Pitch, Velocity
 
     // Audio Device selector
     juce::ComboBox audioDeviceSelector_;
 
-    // Sample panel (bottom-right) - 8 voices (2 per role)
+    // Sample panel (bottom-right) - 4 voices (1 per role)
     juce::Label samplePanelLabel_{"", "SAMPLES"};
-    juce::Label sampleVoiceGroupLabels_[2];  // Primary, Secondary
     juce::Label sampleRoleLabels_[4];        // Timeline, Foundation, Groove, Lead
-    juce::Label sampleNameLabels_[8];        // Display loaded sample names (8 voices)
-    juce::TextButton sampleLoadButtons_[8];  // Load buttons (8 voices)
+    juce::Label sampleNameLabels_[4];        // Display loaded sample names (4 voices)
+    juce::TextButton sampleLoadButtons_[4];  // Load buttons (4 voices)
 
     // Application settings persistence
     juce::ApplicationProperties appProperties_;

@@ -8,23 +8,21 @@ CVRoutingPanel::CVRoutingPanel(TechnoMachine::CVOutputRouter& cvRouter,
                                juce::AudioDeviceManager& deviceManager)
     : cvRouter_(cvRouter), deviceManager_(deviceManager)
 {
-    // 建立 24 個 ComboBox (4 roles × 2 voices × 3 CV types)
+    // 建立 12 個 ComboBox (4 roles × 3 CV types)
     for (int role = 0; role < NUM_ROLES; ++role) {
-        for (int voice = 0; voice < VOICES_PER_ROLE; ++voice) {
-            for (int cvType = 0; cvType < CV_TYPES; ++cvType) {
-                int signalIdx = (role * VOICES_PER_ROLE + voice) * CV_TYPES + cvType;
+        for (int cvType = 0; cvType < CV_TYPES; ++cvType) {
+            int signalIdx = role * CV_TYPES + cvType;
 
-                // ComboBox only (labels drawn in paint)
-                auto* combo = new juce::ComboBox();
-                combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff201a1a));
-                combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xffffffff));
-                combo->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff302828));
-                combo->onChange = [this, signalIdx, combo]() {
-                    onChannelChanged(signalIdx, combo->getSelectedId());
-                };
-                addAndMakeVisible(combo);
-                channelSelectors_.add(combo);
-            }
+            // ComboBox only (labels drawn in paint)
+            auto* combo = new juce::ComboBox();
+            combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff201a1a));
+            combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xffffffff));
+            combo->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff302828));
+            combo->onChange = [this, signalIdx, combo]() {
+                onChannelChanged(signalIdx, combo->getSelectedId());
+            };
+            addAndMakeVisible(combo);
+            channelSelectors_.add(combo);
         }
     }
 
@@ -44,22 +42,19 @@ void CVRoutingPanel::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(0xff0e0c0c));
 
-    int roleHeight = 50;
+    int roleHeight = 40;
     int startY = 8;
     int labelX = 8;
     int comboStartX = 80;
     int comboWidth = 50;
     int comboSpacing = 4;
-    int voiceGap = 170;
 
-    // Column headers (Voice 1 group + Voice 2 group)
+    // Column headers (Trig, Pitch, Vel)
     g.setColour(juce::Colour(0xffa09098));
     g.setFont(11.0f);
     for (int cvType = 0; cvType < CV_TYPES; ++cvType) {
-        int x1 = comboStartX + cvType * (comboWidth + comboSpacing);
-        int x2 = comboStartX + voiceGap + cvType * (comboWidth + comboSpacing);
-        g.drawText(cvTypeNames_[cvType], x1, startY, comboWidth, 12, juce::Justification::centred);
-        g.drawText(cvTypeNames_[cvType], x2, startY, comboWidth, 12, juce::Justification::centred);
+        int x = comboStartX + cvType * (comboWidth + comboSpacing);
+        g.drawText(cvTypeNames_[cvType], x, startY, comboWidth, 12, juce::Justification::centred);
     }
 
     for (int role = 0; role < NUM_ROLES; ++role) {
@@ -82,27 +77,22 @@ void CVRoutingPanel::paint(juce::Graphics& g)
 
 void CVRoutingPanel::resized()
 {
-    int roleHeight = 50;
+    int roleHeight = 40;
     int startY = 8;
     int comboStartX = 80;
     int comboWidth = 50;
     int comboHeight = 18;
     int comboSpacing = 4;
-    int voiceGap = 170;
 
     for (int role = 0; role < NUM_ROLES; ++role) {
         int roleY = startY + 14 + role * roleHeight + 6;
 
-        for (int voice = 0; voice < VOICES_PER_ROLE; ++voice) {
-            int voiceX = comboStartX + voice * voiceGap;
+        for (int cvType = 0; cvType < CV_TYPES; ++cvType) {
+            int idx = role * CV_TYPES + cvType;
+            int x = comboStartX + cvType * (comboWidth + comboSpacing);
 
-            for (int cvType = 0; cvType < CV_TYPES; ++cvType) {
-                int idx = (role * VOICES_PER_ROLE + voice) * CV_TYPES + cvType;
-                int x = voiceX + cvType * (comboWidth + comboSpacing);
-
-                if (idx < channelSelectors_.size()) {
-                    channelSelectors_[idx]->setBounds(x, roleY, comboWidth, comboHeight);
-                }
+            if (idx < channelSelectors_.size()) {
+                channelSelectors_[idx]->setBounds(x, roleY, comboWidth, comboHeight);
             }
         }
     }

@@ -106,9 +106,9 @@ private:
     // 用於 density 過濾的隨機數生成器
     std::mt19937 densityRng_{std::random_device{}()};
 
-    // CV 輸出支援：觸發追蹤
-    bool voiceTriggered_[TechnoMachine::NUM_VOICES] = {false};
-    float lastVelocity_[TechnoMachine::NUM_VOICES] = {0.0f};
+    // CV 輸出支援：觸發追蹤（4 聲道）
+    bool voiceTriggered_[TechnoMachine::NUM_VOICES] = {false, false, false, false};
+    float lastVelocity_[TechnoMachine::NUM_VOICES] = {0.0f, 0.0f, 0.0f, 0.0f};
 
     void processStep(int step);
     void applySynthModifiers();

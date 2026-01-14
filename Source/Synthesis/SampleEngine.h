@@ -137,12 +137,12 @@ struct SampleStereoOutput {
 };
 
 /**
- * Sample engine - manages 8 sample slots (2 per role: Primary + Secondary)
+ * Sample engine - manages 4 sample slots (1 per role)
  */
 class SampleEngine {
 public:
     static constexpr int NUM_ROLES = 4;
-    static constexpr int NUM_VOICES = 8;  // 2 per role
+    static constexpr int NUM_VOICES = 4;  // 1 per role
 
     SampleEngine() = default;
 
@@ -155,7 +155,7 @@ public:
 
     /**
      * Load sample for a specific voice
-     * @param voiceIdx 0-7 (role*2 + voiceInRole)
+     * @param voiceIdx 0-3 (one per role)
      * @param file WAV or AIFF file
      * @return true if loaded successfully
      */
@@ -191,13 +191,12 @@ public:
         SampleStereoOutput output;
 
         // Voice panning (same as synth voices)
-        // Timeline (0,1)=L, Foundation (2,3)=C, Groove (4,5)=C, Lead (6,7)=R
-        static const float panL[NUM_VOICES] = {0.7f, 0.7f, 0.5f, 0.5f, 0.5f, 0.5f, 0.3f, 0.3f};
-        static const float panR[NUM_VOICES] = {0.3f, 0.3f, 0.5f, 0.5f, 0.5f, 0.5f, 0.7f, 0.7f};
+        // Timeline (0)=L, Foundation (1)=C, Groove (2)=C, Lead (3)=R
+        static const float panL[NUM_VOICES] = {0.7f, 0.5f, 0.5f, 0.3f};
+        static const float panR[NUM_VOICES] = {0.3f, 0.5f, 0.5f, 0.7f};
 
         for (int v = 0; v < NUM_VOICES; ++v) {
-            int role = v / 2;
-            float sample = samples_[v].process() * roleLevel_[role];
+            float sample = samples_[v].process() * roleLevel_[v];
             output.left += sample * panL[v];
             output.right += sample * panR[v];
         }

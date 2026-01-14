@@ -9,7 +9,7 @@
 namespace TechnoMachine {
 
 static constexpr int NUM_CV_TYPES = 3;  // Trigger, Pitch, Velocity
-static constexpr int NUM_CV_SIGNALS = NUM_VOICES * NUM_CV_TYPES;  // 24
+static constexpr int NUM_CV_SIGNALS = NUM_VOICES * NUM_CV_TYPES;  // 12
 
 enum class CVType {
     TRIGGER = 0,

@@ -17,7 +17,7 @@ void AudioEngine::prepare(double sampleRate, int samplesPerBlock)
     drums_.setSampleRate(static_cast<float>(sampleRate));
     sampleEngine_.prepare(sampleRate);
 
-    // 套用 Techno 預設音色（8 聲道）
+    // 套用 Techno 預設音色（4 聲道）
     drums_.applyTechnoPreset();
 
     // 設定預設音量
@@ -218,25 +218,26 @@ void AudioEngine::processStep(int step)
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
     // 使用 Deck A/B 混音決策（根據 crossfader 位置）
-    for (int v = 0; v < TechnoMachine::NUM_VOICES; v++) {
-        auto decision = patternEngine_.getMixDecision(v, step);
+    // 每個 Role 合併 Primary/Secondary 觸發（Primary 優先）
+    for (int role = 0; role < TechnoMachine::NUM_ROLES; role++) {
+        auto decision = patternEngine_.getMergedDecision(
+            static_cast<TechnoMachine::Role>(role), step);
         if (decision.shouldTrigger) {
             // 套用 playback density 過濾
-            int role = v / 2;  // 每 2 個 voice 屬於一個 role
             float density = playbackDensity_[role];
 
             // density = 1.0 時全部播放，density = 0.0 時全部靜音
             if (density >= 1.0f || dist(densityRng_) < density) {
-                // 如果此 voice 有 sample 則觸發 sample
-                if (sampleEngine_.hasSample(v)) {
-                    sampleEngine_.triggerVoice(v, decision.velocity);
+                // 如果此 role 有 sample 則觸發 sample
+                if (sampleEngine_.hasSample(role)) {
+                    sampleEngine_.triggerVoice(role, decision.velocity);
                 }
                 // 同時觸發合成器（可疊加）
-                drums_.triggerVoice(v, decision.velocity);
+                drums_.triggerVoice(role, decision.velocity);
 
                 // 設定 CV 觸發旗標
-                voiceTriggered_[v] = true;
-                lastVelocity_[v] = decision.velocity;
+                voiceTriggered_[role] = true;
+                lastVelocity_[role] = decision.velocity;
             }
         }
     }

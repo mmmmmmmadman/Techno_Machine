@@ -4,7 +4,7 @@
 #include "../Core/CVOutputRouter.h"
 
 /**
- * CV Routing Panel - 24 個 CV 輸出通道選擇器
+ * CV Routing Panel - 12 個 CV 輸出通道選擇器
  */
 class CVRoutingPanel : public juce::Component,
                        public juce::ChangeListener
@@ -23,14 +23,13 @@ private:
     juce::AudioDeviceManager& deviceManager_;
 
     static constexpr int NUM_ROLES = 4;
-    static constexpr int VOICES_PER_ROLE = 2;
     static constexpr int CV_TYPES = 3;  // Trigger, Pitch, Velocity
 
     // Role 名稱
     const char* roleNames_[NUM_ROLES] = {"TIMELINE", "FOUNDATION", "GROOVE", "LEAD"};
     const char* cvTypeNames_[CV_TYPES] = {"Trig", "Pitch", "Vel"};
 
-    // 24 個 ComboBox (4 roles × 2 voices × 3 CV types)
+    // 12 個 ComboBox (4 roles × 3 CV types)
     juce::OwnedArray<juce::ComboBox> channelSelectors_;
 
     void updateAvailableChannels();

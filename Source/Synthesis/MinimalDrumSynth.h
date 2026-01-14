@@ -1,20 +1,18 @@
 /**
  * MinimalDrumSynth.h
- * Techno Machine - 8 聲道打擊樂合成引擎
+ * Techno Machine - 4 聲道打擊樂合成引擎
  *
- * 完全套用 UniversalRhythm 設計理念：
- * - 4 Role × 2 Voice = 8 聲道
- * - 只有 2 個參數：Freq 和 Decay
- * - SINE 模式：Freq 控制振盪頻率
- * - NOISE 模式：Freq 控制 BPF 中心頻率（已修正增益）
- * - Attack 固定超快 (<1ms) 確保瞬態
- * - Velocity 直接映射到 VCA 增益
+ * 架構：
+ * - 4 Role = 4 合成器聲道
+ * - Pattern 系統保留 8 個（Primary + Secondary Interlock）
+ * - 觸發時 Primary 優先，合併輸出到單一聲道
+ * - Velocity 可調變 Freq/Decay（用戶自訂演算法）
  *
- * Techno 雙音色配置（來自 EXTENDED_PRESETS[9]）：
- * - TIMELINE: HiHat (10kHz) + HiHat Accent (12kHz)
- * - FOUNDATION: 909 Kick (42Hz) + Kick Layer (55Hz)
- * - GROOVE: Clap (1800Hz) + Rim (3000Hz)
- * - LEAD: Open HH (5kHz) + Tom (600Hz)
+ * 音色配置：
+ * - TIMELINE: HiHat
+ * - FOUNDATION: Kick
+ * - GROOVE: Clap
+ * - LEAD: Perc
  */
 
 #pragma once
@@ -40,11 +38,15 @@ enum Role {
     TIMELINE = 0,    // Hi-Hat
     FOUNDATION = 1,  // Kick
     GROOVE = 2,      // Clap
-    LEAD = 3,        // Rim
+    LEAD = 3,        // Perc
     NUM_ROLES = 4
 };
 
-static constexpr int NUM_VOICES = 8;  // 4 Role × 2 Voice
+// Pattern 系統用（保留 8 個 pattern 的 Interlock 邏輯）
+static constexpr int NUM_PATTERN_VOICES = 8;
+
+// 合成器聲道數（每 Role 一個）
+static constexpr int NUM_VOICES = 4;
 
 /**
  * 極簡單聲道合成器
@@ -172,138 +174,90 @@ struct VoicePreset {
 };
 
 /**
- * Techno 風格 8 聲道預設
- * 來自 UniversalRhythm EXTENDED_PRESETS[9]
+ * Techno 風格 4 聲道預設
+ * 每個 Role 一個基礎音色
  */
 inline const VoicePreset TECHNO_PRESETS[NUM_VOICES] = {
-    // TIMELINE: Voice 0, 1
-    { SynthMode::NOISE, 10000.0f, 20.0f },   // HiHat
-    { SynthMode::NOISE, 12000.0f, 12.0f },   // HiHat Accent
-    // FOUNDATION: Voice 2, 3
-    { SynthMode::SINE, 42.0f, 250.0f },      // 909 Kick
-    { SynthMode::SINE, 55.0f, 180.0f },      // Kick Layer
-    // GROOVE: Voice 4, 5
-    { SynthMode::NOISE, 1800.0f, 55.0f },    // Clap
-    { SynthMode::NOISE, 3000.0f, 35.0f },    // Rim
-    // LEAD: Voice 6, 7
-    { SynthMode::NOISE, 5000.0f, 80.0f },    // Open HH
-    { SynthMode::SINE, 600.0f, 60.0f }       // Tom
+    { SynthMode::NOISE, 10000.0f, 20.0f },   // TIMELINE: HiHat
+    { SynthMode::SINE, 42.0f, 250.0f },      // FOUNDATION: 909 Kick
+    { SynthMode::NOISE, 1800.0f, 55.0f },    // GROOVE: Clap
+    { SynthMode::NOISE, 5000.0f, 80.0f }     // LEAD: Perc
 };
 
 /**
  * 10 種風格的音色預設
- * 每種風格有獨特的音色特徵
+ * 每種風格 4 個音色（每 Role 一個）
  */
 inline const VoicePreset STYLE_PRESETS[10][NUM_VOICES] = {
     // 0: TECHNO - 經典 909 電子音色
     {
-        { SynthMode::NOISE, 10000.0f, 20.0f },   // HiHat - 明亮短促
-        { SynthMode::NOISE, 12000.0f, 12.0f },   // HiHat Accent
-        { SynthMode::SINE, 42.0f, 250.0f },      // Kick - 深沉 909
-        { SynthMode::SINE, 55.0f, 180.0f },      // Kick Layer
-        { SynthMode::NOISE, 1800.0f, 55.0f },    // Clap
-        { SynthMode::NOISE, 3000.0f, 35.0f },    // Rim
-        { SynthMode::NOISE, 5000.0f, 80.0f },    // Open HH
-        { SynthMode::SINE, 600.0f, 60.0f }       // Tom
+        { SynthMode::NOISE, 10000.0f, 20.0f },   // TIMELINE: HiHat
+        { SynthMode::SINE, 42.0f, 250.0f },      // FOUNDATION: 909 Kick
+        { SynthMode::NOISE, 1800.0f, 55.0f },    // GROOVE: Clap
+        { SynthMode::NOISE, 5000.0f, 80.0f }     // LEAD: Open HH
     },
     // 1: ELECTRONIC - 更亮更銳利
     {
-        { SynthMode::NOISE, 14000.0f, 15.0f },   // HiHat - 超高頻
-        { SynthMode::NOISE, 16000.0f, 8.0f },    // HiHat Accent - 極短
-        { SynthMode::SINE, 38.0f, 300.0f },      // Kick - 更低更長
-        { SynthMode::SINE, 48.0f, 220.0f },      // Kick Layer
-        { SynthMode::NOISE, 2200.0f, 40.0f },    // Clap - 更亮
-        { SynthMode::NOISE, 4000.0f, 25.0f },    // Rim - 更高
-        { SynthMode::NOISE, 6000.0f, 100.0f },   // Open HH - 更長
-        { SynthMode::SINE, 800.0f, 45.0f }       // Synth - 更高
+        { SynthMode::NOISE, 14000.0f, 15.0f },   // TIMELINE: HiHat
+        { SynthMode::SINE, 38.0f, 300.0f },      // FOUNDATION: Kick
+        { SynthMode::NOISE, 2200.0f, 40.0f },    // GROOVE: Clap
+        { SynthMode::NOISE, 6000.0f, 100.0f }    // LEAD: Open HH
     },
     // 2: BREAKBEAT - 更有機、斷裂感
     {
-        { SynthMode::NOISE, 8000.0f, 35.0f },    // HiHat - 較暗較長
-        { SynthMode::NOISE, 9000.0f, 25.0f },    // HiHat Accent
-        { SynthMode::SINE, 55.0f, 180.0f },      // Kick - 較高較短
-        { SynthMode::SINE, 70.0f, 120.0f },      // Kick Layer - punch
-        { SynthMode::NOISE, 1200.0f, 80.0f },    // Snare - 較低較長
-        { SynthMode::NOISE, 2500.0f, 50.0f },    // Rim
-        { SynthMode::NOISE, 4000.0f, 120.0f },   // Open HH - 很長
-        { SynthMode::SINE, 400.0f, 90.0f }       // Tom - 較低
+        { SynthMode::NOISE, 8000.0f, 35.0f },    // TIMELINE: HiHat
+        { SynthMode::SINE, 55.0f, 180.0f },      // FOUNDATION: Kick
+        { SynthMode::NOISE, 1200.0f, 80.0f },    // GROOVE: Snare
+        { SynthMode::NOISE, 4000.0f, 120.0f }    // LEAD: Open HH
     },
     // 3: WEST_AFRICAN - 手鼓、Djembe 風格
     {
-        { SynthMode::NOISE, 5000.0f, 45.0f },    // Shaker - 沙沙聲
-        { SynthMode::NOISE, 6000.0f, 30.0f },    // Shaker Accent
-        { SynthMode::SINE, 80.0f, 150.0f },      // Djembe Bass - 較高
-        { SynthMode::SINE, 120.0f, 100.0f },     // Djembe Tone
-        { SynthMode::NOISE, 800.0f, 70.0f },     // Djembe Slap - 較低
-        { SynthMode::SINE, 250.0f, 80.0f },      // Bell - 音調
-        { SynthMode::NOISE, 3000.0f, 60.0f },    // Shekere
-        { SynthMode::SINE, 180.0f, 120.0f }      // Talking Drum
+        { SynthMode::NOISE, 5000.0f, 45.0f },    // TIMELINE: Shaker
+        { SynthMode::SINE, 80.0f, 150.0f },      // FOUNDATION: Djembe Bass
+        { SynthMode::NOISE, 800.0f, 70.0f },     // GROOVE: Djembe Slap
+        { SynthMode::NOISE, 3000.0f, 60.0f }     // LEAD: Shekere
     },
     // 4: AFRO_CUBAN - Conga、Bongo
     {
-        { SynthMode::NOISE, 4500.0f, 50.0f },    // Guiro
-        { SynthMode::NOISE, 5500.0f, 35.0f },    // Guiro Accent
-        { SynthMode::SINE, 90.0f, 180.0f },      // Conga Low
-        { SynthMode::SINE, 140.0f, 140.0f },     // Conga High
-        { SynthMode::NOISE, 1000.0f, 60.0f },    // Conga Slap
-        { SynthMode::SINE, 300.0f, 50.0f },      // Bongo
-        { SynthMode::NOISE, 2500.0f, 40.0f },    // Timbale
-        { SynthMode::SINE, 220.0f, 100.0f }      // Cowbell
+        { SynthMode::NOISE, 4500.0f, 50.0f },    // TIMELINE: Guiro
+        { SynthMode::SINE, 90.0f, 180.0f },      // FOUNDATION: Conga Low
+        { SynthMode::NOISE, 1000.0f, 60.0f },    // GROOVE: Conga Slap
+        { SynthMode::NOISE, 2500.0f, 40.0f }     // LEAD: Timbale
     },
     // 5: BRAZILIAN - Samba 風格
     {
-        { SynthMode::NOISE, 7000.0f, 25.0f },    // Tamborim - 高頻短促
-        { SynthMode::NOISE, 8000.0f, 18.0f },    // Tamborim Accent
-        { SynthMode::SINE, 65.0f, 200.0f },      // Surdo - 大鼓
-        { SynthMode::SINE, 85.0f, 160.0f },      // Surdo High
-        { SynthMode::NOISE, 1500.0f, 45.0f },    // Caixa - 小鼓
-        { SynthMode::NOISE, 3500.0f, 30.0f },    // Agogo
-        { SynthMode::NOISE, 4500.0f, 55.0f },    // Cuica
-        { SynthMode::SINE, 350.0f, 70.0f }       // Repinique
+        { SynthMode::NOISE, 7000.0f, 25.0f },    // TIMELINE: Tamborim
+        { SynthMode::SINE, 65.0f, 200.0f },      // FOUNDATION: Surdo
+        { SynthMode::NOISE, 1500.0f, 45.0f },    // GROOVE: Caixa
+        { SynthMode::NOISE, 4500.0f, 55.0f }     // LEAD: Cuica
     },
     // 6: JAZZ - Brush、Ride 風格
     {
-        { SynthMode::NOISE, 6000.0f, 90.0f },    // Ride - 較長
-        { SynthMode::NOISE, 7000.0f, 60.0f },    // Ride Bell
-        { SynthMode::SINE, 50.0f, 350.0f },      // Kick - 軟而長
-        { SynthMode::SINE, 60.0f, 280.0f },      // Kick Ghost
-        { SynthMode::NOISE, 1400.0f, 100.0f },   // Brush - 刷子
-        { SynthMode::NOISE, 2000.0f, 70.0f },    // Cross Stick
-        { SynthMode::NOISE, 5500.0f, 150.0f },   // Crash - 很長
-        { SynthMode::SINE, 500.0f, 80.0f }       // Tom - 較軟
+        { SynthMode::NOISE, 6000.0f, 90.0f },    // TIMELINE: Ride
+        { SynthMode::SINE, 50.0f, 350.0f },      // FOUNDATION: Kick
+        { SynthMode::NOISE, 1400.0f, 100.0f },   // GROOVE: Brush
+        { SynthMode::NOISE, 5500.0f, 150.0f }    // LEAD: Crash
     },
     // 7: BALKAN - 不對稱、金屬感
     {
-        { SynthMode::NOISE, 9000.0f, 30.0f },    // Zurna-like
-        { SynthMode::NOISE, 11000.0f, 20.0f },   // Accent
-        { SynthMode::SINE, 75.0f, 130.0f },      // Tapan Bass - 較短
-        { SynthMode::SINE, 100.0f, 100.0f },     // Tapan High
-        { SynthMode::NOISE, 2000.0f, 40.0f },    // Tapan Rim
-        { SynthMode::SINE, 400.0f, 35.0f },      // Finger Cymbal
-        { SynthMode::NOISE, 3500.0f, 45.0f },    // Darbuka
-        { SynthMode::SINE, 280.0f, 60.0f }       // Def
+        { SynthMode::NOISE, 9000.0f, 30.0f },    // TIMELINE: Zurna-like
+        { SynthMode::SINE, 75.0f, 130.0f },      // FOUNDATION: Tapan Bass
+        { SynthMode::NOISE, 2000.0f, 40.0f },    // GROOVE: Tapan Rim
+        { SynthMode::NOISE, 3500.0f, 45.0f }     // LEAD: Darbuka
     },
     // 8: INDIAN - Tabla 風格
     {
-        { SynthMode::NOISE, 5500.0f, 40.0f },    // Jhanjh (Cymbal)
-        { SynthMode::NOISE, 6500.0f, 28.0f },    // Jhanjh Accent
-        { SynthMode::SINE, 60.0f, 280.0f },      // Bayan (Low Tabla)
-        { SynthMode::SINE, 75.0f, 220.0f },      // Bayan Ghost
-        { SynthMode::SINE, 200.0f, 60.0f },      // Dayan (High Tabla) Na
-        { SynthMode::SINE, 350.0f, 45.0f },      // Dayan Tin
-        { SynthMode::NOISE, 2800.0f, 50.0f },    // Dholak
-        { SynthMode::SINE, 150.0f, 90.0f }       // Mridangam
+        { SynthMode::NOISE, 5500.0f, 40.0f },    // TIMELINE: Jhanjh
+        { SynthMode::SINE, 60.0f, 280.0f },      // FOUNDATION: Bayan
+        { SynthMode::SINE, 200.0f, 60.0f },      // GROOVE: Dayan
+        { SynthMode::NOISE, 2800.0f, 50.0f }     // LEAD: Dholak
     },
     // 9: GAMELAN - 金屬、鐘聲
     {
-        { SynthMode::SINE, 1200.0f, 200.0f },    // Kenong - 金屬音調
-        { SynthMode::SINE, 1500.0f, 150.0f },    // Kenong High
-        { SynthMode::SINE, 100.0f, 400.0f },     // Gong - 極長
-        { SynthMode::SINE, 130.0f, 350.0f },     // Gong Mid
-        { SynthMode::SINE, 800.0f, 120.0f },     // Saron
-        { SynthMode::SINE, 600.0f, 100.0f },     // Gender
-        { SynthMode::SINE, 2000.0f, 80.0f },     // Bonang
-        { SynthMode::SINE, 450.0f, 180.0f }      // Slenthem
+        { SynthMode::SINE, 1200.0f, 200.0f },    // TIMELINE: Kenong
+        { SynthMode::SINE, 100.0f, 400.0f },     // FOUNDATION: Gong
+        { SynthMode::SINE, 800.0f, 120.0f },     // GROOVE: Saron
+        { SynthMode::SINE, 2000.0f, 80.0f }      // LEAD: Bonang
     }
 };
 
@@ -316,7 +270,7 @@ inline const VoicePreset* getStylePreset(int styleIdx) {
 }
 
 /**
- * 8 聲道打擊樂合成器（4 Role × 2 Voice）
+ * 4 聲道打擊樂合成器（每 Role 一個聲道）
  */
 class MinimalDrumSynth {
 public:
@@ -340,6 +294,7 @@ public:
 
     /**
      * 設定某個 Voice 的音色
+     * voiceIdx: 0-3（對應 4 個 Role）
      */
     void setVoiceParams(int voiceIdx, SynthMode mode, float freq, float decay) {
         if (voiceIdx < 0 || voiceIdx >= NUM_VOICES) return;
@@ -349,19 +304,18 @@ public:
     }
 
     /**
-     * 觸發某個 Role（同時觸發兩個 Voice）
-     * velocityV1: 主音色的 velocity
-     * velocityV2: 副音色的 velocity（通常較低或不觸發）
+     * 觸發某個 Role
+     * role: 0-3
+     * velocity: 觸發力度
      */
-    void triggerRole(Role role, float velocityV1, float velocityV2 = 0.0f) {
+    void triggerRole(Role role, float velocity) {
         if (role < 0 || role >= NUM_ROLES) return;
-        int voiceBase = role * 2;
-        if (velocityV1 > 0.0f) voices_[voiceBase].trigger(velocityV1);
-        if (velocityV2 > 0.0f) voices_[voiceBase + 1].trigger(velocityV2);
+        if (velocity > 0.0f) voices_[role].trigger(velocity);
     }
 
     /**
-     * 觸發單一 Voice
+     * 觸發單一 Voice（與 triggerRole 相同，保留相容性）
+     * voiceIdx: 0-3
      */
     void triggerVoice(int voiceIdx, float velocity = 1.0f) {
         if (voiceIdx < 0 || voiceIdx >= NUM_VOICES) return;
@@ -377,7 +331,7 @@ public:
     }
 
     /**
-     * 設定 Role 音量（影響該 Role 的兩個 Voice）
+     * 設定 Role 音量
      */
     void setLevel(Role role, float level) {
         if (role < 0 || role >= NUM_ROLES) return;
@@ -396,23 +350,12 @@ public:
         float mixL = 0.0f, mixR = 0.0f;
 
         for (int r = 0; r < NUM_ROLES; r++) {
-            int voiceBase = r * 2;
+            float signal = voices_[r].process();
+            float pan = rolePan_[r];
 
-            // 處理兩個 Voice
-            float signal1 = voices_[voiceBase].process();
-            float signal2 = voices_[voiceBase + 1].process();
-
-            // Pan 位置（套用 UniversalRhythm spread 全滿）
-            float pan1 = rolePanV1_[r];
-            float pan2 = rolePanV2_[r];
-
-            // Voice 1 panning
-            mixL += signal1 * levels_[r] * (0.5f - pan1 * 0.5f) * 1.414f;
-            mixR += signal1 * levels_[r] * (0.5f + pan1 * 0.5f) * 1.414f;
-
-            // Voice 2 panning
-            mixL += signal2 * levels_[r] * (0.5f - pan2 * 0.5f) * 1.414f;
-            mixR += signal2 * levels_[r] * (0.5f + pan2 * 0.5f) * 1.414f;
+            // Panning
+            mixL += signal * levels_[r] * (0.5f - pan * 0.5f) * 1.414f;
+            mixR += signal * levels_[r] * (0.5f + pan * 0.5f) * 1.414f;
         }
 
         // 軟限幅
@@ -423,13 +366,11 @@ public:
     }
 
     /**
-     * 處理並輸出 8 個獨立聲道
+     * 處理並輸出 4 個獨立聲道
      */
     void processSeparate(float* outputs) {
         for (int r = 0; r < NUM_ROLES; r++) {
-            int voiceBase = r * 2;
-            outputs[voiceBase] = voices_[voiceBase].process() * levels_[r];
-            outputs[voiceBase + 1] = voices_[voiceBase + 1].process() * levels_[r];
+            outputs[r] = voices_[r].process() * levels_[r];
         }
     }
 
@@ -440,11 +381,9 @@ private:
     // 音量（per Role）
     float levels_[NUM_ROLES] = { 0.5f, 1.0f, 0.7f, 0.5f };
 
-    // Panning - 套用 UniversalRhythm spread 全滿
+    // Panning - 每個 Role 的立體聲位置
     // 範圍 -1.0 (左) 到 +1.0 (右)
-    // Timeline: 右側, Foundation: 中央, Groove: 分左右, Lead: 左側
-    const float rolePanV1_[NUM_ROLES] = { 0.40f,  0.0f, -0.60f, -0.80f };
-    const float rolePanV2_[NUM_ROLES] = { 0.50f,  0.0f,  0.60f, -1.00f };
+    const float rolePan_[NUM_ROLES] = { 0.40f, 0.0f, -0.30f, -0.60f };
 };
 
 } // namespace TechnoMachine

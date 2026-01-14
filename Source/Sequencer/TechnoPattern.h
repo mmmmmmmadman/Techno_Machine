@@ -1,11 +1,10 @@
 /**
  * TechnoPattern.h
- * Techno Machine - 8 聲道節奏生成系統
+ * Techno Machine - 節奏生成系統
  *
- * 完全套用 UniversalRhythm 設計：
- * - 4 Role × 2 Voice = 8 聲道
- * - Primary voice: 主要節奏
- * - Secondary voice: 使用 Interlock 生成的補充節奏
+ * Pattern 架構：
+ * - 8 個 Pattern（4 Role × 2 Voice：Primary + Secondary Interlock）
+ * - 觸發時合併為 4 個合成器聲道（Primary 優先）
  * - Variation 影響 density 和隨機性
  * - 支援 10 種風格切換
  */
@@ -133,24 +132,25 @@ private:
 };
 
 /**
- * 8 聲道 Pattern 組合（4 Role × 2 Voice）
+ * 8 個 Pattern 組合（4 Role × 2 Voice：Primary + Secondary）
+ * Pattern 數量保持 8 個以維持 Interlock 邏輯
  */
 struct MultiVoicePatterns {
-    Pattern patterns[NUM_VOICES];
+    Pattern patterns[NUM_PATTERN_VOICES];
 
     MultiVoicePatterns(int length = 16) {
-        for (int i = 0; i < NUM_VOICES; i++) {
+        for (int i = 0; i < NUM_PATTERN_VOICES; i++) {
             patterns[i] = Pattern(length);
         }
     }
 
     Pattern& getPattern(int voiceIdx) {
-        if (voiceIdx < 0 || voiceIdx >= NUM_VOICES) return patterns[0];
+        if (voiceIdx < 0 || voiceIdx >= NUM_PATTERN_VOICES) return patterns[0];
         return patterns[voiceIdx];
     }
 
     const Pattern& getPattern(int voiceIdx) const {
-        if (voiceIdx < 0 || voiceIdx >= NUM_VOICES) return patterns[0];
+        if (voiceIdx < 0 || voiceIdx >= NUM_PATTERN_VOICES) return patterns[0];
         return patterns[voiceIdx];
     }
 };
@@ -396,6 +396,7 @@ private:
 
 /**
  * Synth Modifier - Variation 影響音色參數
+ * 使用合成器聲道數（4 個）
  */
 struct SynthModifiers {
     float freqMod[NUM_VOICES];   // 頻率乘數 (0.5 - 2.0)
@@ -410,11 +411,21 @@ struct SynthModifiers {
 };
 
 /**
- * Crossfade 觸發決策結果
+ * Crossfade 觸發決策結果（用於 8 個 Pattern voice）
  */
 struct CrossfadeDecision {
     bool shouldTrigger;
     float velocity;
+};
+
+/**
+ * 合併觸發決策結果（用於 4 個合成器聲道）
+ * 將 Primary + Secondary pattern 合併為單一觸發
+ */
+struct MergedTriggerDecision {
+    bool shouldTrigger;
+    float velocity;
+    bool fromPrimary;  // true = Primary, false = Secondary
 };
 
 /**
@@ -631,9 +642,10 @@ public:
     bool isFillActive() const { return fillActive_; }
 
     // 取得當前作用中的 pattern（考慮 Fill）
+    // voiceIdx: 0-7（Pattern voice 索引）
     const Pattern& getActivePattern(int voiceIdx) const {
         const Deck& d = (crossfaderPosition_ < 0.5f) ? deckA_ : deckB_;
-        if (fillActive_ && voiceIdx >= 0 && voiceIdx < NUM_VOICES) {
+        if (fillActive_ && voiceIdx >= 0 && voiceIdx < NUM_PATTERN_VOICES) {
             return d.fillPatterns.getPattern(voiceIdx);
         }
         return d.patterns.getPattern(voiceIdx);
@@ -747,14 +759,15 @@ public:
     /**
      * 取得混合後的音色預設
      * 根據 crossfader 位置平滑混合 Deck A 和 B 的風格預設
-     * 所有角色都使用平滑過渡
+     * 使用 4 個合成器聲道
      */
     MixedPreset getMixedPresets() const {
         MixedPreset result;
         float djPos = applyDJCurve(crossfaderPosition_);
 
         for (int v = 0; v < NUM_VOICES; v++) {
-            int role = v / 2;
+            // v 直接對應 Role（NUM_VOICES = 4 = NUM_ROLES）
+            int role = v;
 
             // 取得各 Deck 對應角色的風格預設
             int styleA = deckA_.styleIndices[role];
@@ -888,6 +901,41 @@ public:
         return getMixDecision(voiceIdx, step);
     }
 
+    /**
+     * 取得合併後的觸發決策（4 聲道用）
+     * 將 Primary + Secondary pattern 合併為單一觸發
+     * Primary 優先，無 Primary 時使用 Secondary
+     *
+     * @param role 角色索引 (0-3)
+     * @param step 當前步數
+     * @return 合併後的觸發決策
+     */
+    MergedTriggerDecision getMergedDecision(Role role, int step) {
+        MergedTriggerDecision result = {false, 0.0f, false};
+
+        if (role < 0 || role >= NUM_ROLES) return result;
+
+        int primaryVoice = role * 2;
+        int secondaryVoice = role * 2 + 1;
+
+        // 取得 Primary 和 Secondary 的決策
+        auto primaryDecision = getMixDecision(primaryVoice, step);
+        auto secondaryDecision = getMixDecision(secondaryVoice, step);
+
+        // Primary 優先邏輯
+        if (primaryDecision.shouldTrigger) {
+            result.shouldTrigger = true;
+            result.velocity = primaryDecision.velocity;
+            result.fromPrimary = true;
+        } else if (secondaryDecision.shouldTrigger) {
+            result.shouldTrigger = true;
+            result.velocity = secondaryDecision.velocity;
+            result.fromPrimary = false;
+        }
+
+        return result;
+    }
+
 private:
     PatternGenerator generator_;
     int patternLength_ = 16;
@@ -901,7 +949,7 @@ private:
         float variation = 0.5f;
 
         void clear() {
-            for (int i = 0; i < NUM_VOICES; i++) {
+            for (int i = 0; i < NUM_PATTERN_VOICES; i++) {
                 patterns.patterns[i].clear();
                 fillPatterns.patterns[i].clear();
             }
@@ -987,13 +1035,14 @@ private:
 
     /**
      * 為指定 Deck 加入 Ghost Notes
+     * 處理 8 個 Pattern
      */
     void addGhostNotesToDeck(Deck& deck, float variation) {
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
         std::uniform_real_distribution<float> velDist(0.25f, 0.32f);
         float ghostProb = 0.1f + variation * 0.2f;
 
-        for (int v = 0; v < NUM_VOICES; v++) {
+        for (int v = 0; v < NUM_PATTERN_VOICES; v++) {
             Pattern& p = deck.patterns.patterns[v];
             for (int i = 0; i < p.length; i++) {
                 if (p.hasOnset(i)) continue;
@@ -1068,7 +1117,7 @@ private:
         std::uniform_real_distribution<float> velDist(0.7f, 0.95f);
         std::uniform_real_distribution<float> accentVelDist(0.95f, 1.0f);
 
-        for (int v = 0; v < NUM_VOICES; v++) {
+        for (int v = 0; v < NUM_PATTERN_VOICES; v++) {
             int role = v / 2;
             Pattern& fill = deck.fillPatterns.patterns[v];
 
